@@ -176,6 +176,21 @@ export interface PowerState {
   measured_at: string | null;
 }
 
+export interface SerialConnectionState {
+  status: "DISABLED" | "CONNECTING" | "CONNECTED" | "DISCONNECTED" | "ERROR";
+  enabled: boolean;
+  configured_port: string | null;
+  baud_rate: number;
+  last_connected_at: string | null;
+  last_disconnected_at: string | null;
+  last_valid_packet_at: string | null;
+  last_error: string | null;
+  reconnect_attempt_count: number;
+  reconnect_pending: boolean;
+  packets_received: number;
+  packets_rejected: number;
+}
+
 export interface SystemState {
   schema_version: "1.0";
   data_mode: DataMode;
@@ -189,6 +204,7 @@ export interface SystemState {
   };
   weather: WeatherState;
   power: PowerState;
+  telemetry_connection: SerialConnectionState;
 }
 
 export interface IrrigationNeedPolicy {

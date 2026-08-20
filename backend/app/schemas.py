@@ -11,6 +11,13 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validato
 SchemaVersion = Literal["1.0"]
 DataMode = Literal["simulation", "hardware"]
 ZoneId = Literal["A", "B"]
+SerialConnectionStatus = Literal[
+    "DISABLED",
+    "CONNECTING",
+    "CONNECTED",
+    "DISCONNECTED",
+    "ERROR",
+]
 GrowthStageMode = Literal["AUTO", "MANUAL"]
 WeatherStatus = Literal["SIMULATED", "LIVE", "CACHED", "OFFLINE"]
 WeatherProviderStatus = Literal[
@@ -255,6 +262,45 @@ class ZoneTelemetry(CanonicalModel):
     battery_pct: Percentage | None = None
     signal_rssi_dbm: float | None = None
     received_at: AwareDatetime | None = None
+
+
+class SerialPacketHeader(BaseModel):
+    """Minimal discriminating header; the selected packet schema validates the rest."""
+
+    model_config = ConfigDict(extra="allow", frozen=True)
+
+    schema_version: SchemaVersion
+    type: str
+
+
+class FieldTelemetryPacket(CanonicalModel):
+    """Inbound hardware packet before backend-owned receive timing is attached."""
+
+    schema_version: SchemaVersion = "1.0"
+    type: Literal["field_telemetry"] = "field_telemetry"
+    node_id: Annotated[str, Field(min_length=1)]
+    zone_id: ZoneId
+    timestamp_ms: NonNegativeInt | None = None
+    soil_moisture_raw: NonNegativeInt | None = None
+    soil_moisture_pct: Percentage | None = None
+    temperature_c: Annotated[float, Field(allow_inf_nan=False)] | None = None
+    humidity_pct: Percentage | None = None
+    pressure_pa: Annotated[float, Field(gt=0, allow_inf_nan=False)] | None = None
+    gas_resistance_ohm: Annotated[
+        float, Field(gt=0, allow_inf_nan=False)
+    ] | None = None
+    sraw: Annotated[int, Field(ge=0, le=65_535)] | None = None
+    battery_voltage_v: NonNegativeFloat | None = None
+    battery_pct: Percentage | None = None
+    signal_rssi_dbm: Annotated[float, Field(allow_inf_nan=False)] | None = None
+
+    def to_zone_telemetry(self, *, received_at: AwareDatetime) -> ZoneTelemetry:
+        return ZoneTelemetry.model_validate(
+            {
+                **self.model_dump(),
+                "received_at": received_at,
+            }
+        )
 
 
 class SourceMetadata(CanonicalModel):
@@ -906,6 +952,31 @@ class FreshwaterAllocationResult(CanonicalModel):
         return self
 
 
+class SerialConnectionState(CanonicalModel):
+    status: SerialConnectionStatus = "DISABLED"
+    enabled: bool = False
+    configured_port: str | None = None
+    baud_rate: Annotated[int, Field(gt=0)] = 115_200
+    last_connected_at: AwareDatetime | None = None
+    last_disconnected_at: AwareDatetime | None = None
+    last_valid_packet_at: AwareDatetime | None = None
+    last_error: str | None = None
+    reconnect_attempt_count: NonNegativeInt = 0
+    reconnect_pending: bool = False
+    packets_received: NonNegativeInt = 0
+    packets_rejected: NonNegativeInt = 0
+
+    @model_validator(mode="after")
+    def validate_connection_state(self) -> Self:
+        if self.enabled != (self.status != "DISABLED"):
+            raise ValueError("serial enabled flag does not match connection status")
+        if self.status == "CONNECTED" and self.reconnect_pending:
+            raise ValueError("connected serial state cannot have a reconnect pending")
+        if self.status == "DISABLED" and self.configured_port is not None:
+            raise ValueError("disabled serial state cannot expose a configured port")
+        return self
+
+
 class PowerState(CanonicalModel):
     connected: bool = False
     solar_power_w: NonNegativeFloat | None = None
@@ -937,6 +1008,9 @@ class SystemState(CanonicalModel):
     water: WaterState
     weather: WeatherState
     power: PowerState
+    telemetry_connection: SerialConnectionState = Field(
+        default_factory=SerialConnectionState
+    )
 
     @model_validator(mode="after")
     def validate_complete_zone_set(self) -> Self:

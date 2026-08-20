@@ -25,6 +25,15 @@ class Settings:
     api_prefix: str = "/api/v1"
     data_mode: Literal["simulation", "hardware"] = _data_mode()
     frontend_origin: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
+    serial_port: str | None = os.getenv("SERIAL_PORT", "").strip() or None
+    serial_baud: int = int(os.getenv("SERIAL_BAUD", "115200"))
+    serial_read_timeout_s: float = float(
+        os.getenv("SERIAL_READ_TIMEOUT_S", "0.25")
+    )
+    serial_reconnect_interval_s: float = float(
+        os.getenv("SERIAL_RECONNECT_INTERVAL_S", "2")
+    )
+    serial_max_line_bytes: int = int(os.getenv("SERIAL_MAX_LINE_BYTES", "8192"))
     farm_latitude: float | None = _optional_float("FARM_LATITUDE", "12.9692")
     farm_longitude: float | None = _optional_float("FARM_LONGITUDE", "79.1559")
     weather_provider: str = os.getenv("WEATHER_PROVIDER", "open-meteo")

@@ -1,5 +1,7 @@
 """FastAPI application entry point."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,9 +14,19 @@ from app.api.zones import router as zones_router
 from app.api.weather import router as weather_router
 from app.api.water import router as water_router
 from app.config import settings
+from app.services.serial_bridge import serial_bridge
 
 
-app = FastAPI(title=settings.app_name, version="0.1.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    serial_bridge.start()
+    try:
+        yield
+    finally:
+        serial_bridge.stop()
+
+
+app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_origin],

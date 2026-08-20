@@ -24,6 +24,8 @@ def test_get_complete_state_is_visibly_simulated() -> None:
     assert payload["data_mode"] == "simulation"
     assert set(payload["zones"]) == {"A", "B"}
     assert payload["power"]["solar_power_w"] is None
+    assert payload["telemetry_connection"]["status"] == "DISABLED"
+    assert payload["telemetry_connection"]["enabled"] is False
 
 
 def test_list_activate_and_reset_simulation_scenario() -> None:

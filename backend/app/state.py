@@ -16,6 +16,7 @@ from app.schemas import (
     PowerState,
     PrototypeIrrigationParameters,
     PrototypeWaterQualityParameters,
+    SerialConnectionState,
     SimulationScenarioSummary,
     SystemState,
     VivayuHealthState,
@@ -82,6 +83,8 @@ class ApplicationStateStore:
         crop_service: CropService = default_crop_service,
         vivayu_service: VivayuHealthService | None = None,
         today_provider: Callable[[], date] = date.today,
+        now_provider: Callable[[], datetime] = _utc_now,
+        stale_telemetry_after_s: float = settings.irrigation_stale_telemetry_after_s,
     ) -> None:
         self._lock = RLock()
         self._data_mode = data_mode
@@ -90,6 +93,10 @@ class ApplicationStateStore:
             model_path=resolve_model_path(settings.vivayu_model_path)
         )
         self._today_provider = today_provider
+        self._now_provider = now_provider
+        if stale_telemetry_after_s <= 0:
+            raise ValueError("stale_telemetry_after_s must be positive")
+        self._stale_telemetry_after_s = stale_telemetry_after_s
         document = json.loads(scenario_path.read_text(encoding="utf-8"))
         if document.get("schema_version") != "1.0":
             raise ValueError("unsupported demo scenario schema_version")
@@ -141,7 +148,7 @@ class ApplicationStateStore:
         state_payload = deepcopy(payload)
         state_payload["data_mode"] = data_mode or self._data_mode
         state_payload["active_scenario_id"] = active_scenario_id
-        state_payload["updated_at"] = _utc_now().isoformat()
+        state_payload["updated_at"] = self._now_provider().isoformat()
         return state_payload
 
     def _new_initial_state(self) -> SystemState:
@@ -191,7 +198,7 @@ class ApplicationStateStore:
             )
         return self._with_derived_contexts(SystemState(
             data_mode="hardware",
-            updated_at=_utc_now(),
+            updated_at=self._now_provider(),
             zones=zones,
             water=WaterState(
                 fresh=WaterSourceState(
@@ -212,6 +219,11 @@ class ApplicationStateStore:
                 error="weather forecast has not been fetched",
             ),
             power=PowerState(connected=False),
+            telemetry_connection=SerialConnectionState(
+                status="DISCONNECTED",
+                enabled=True,
+                baud_rate=settings.serial_baud,
+            ),
         ))
 
     def _with_initial_vivayu_health(self, state: SystemState) -> SystemState:
@@ -296,12 +308,12 @@ class ApplicationStateStore:
             return self._state_snapshot()
 
     def _state_snapshot(self) -> SystemState:
-        """Refresh hardware measurement ages without mutating canonical state."""
+        """Refresh receive-time freshness and measurement ages without data loss."""
 
         if self._state.data_mode != "hardware":
             return self._state.model_copy(deep=True)
         source_updates: dict[str, WaterSourceState] = {}
-        now = _utc_now()
+        now = self._now_provider()
         for source_id in ("fresh", "marginal"):
             source = getattr(self._state.water, source_id)
             if source.last_measured_at is None:
@@ -323,12 +335,28 @@ class ApplicationStateStore:
                 deep=True,
             )
         water = self._state.water.model_copy(update=source_updates, deep=True)
-        return self._state.model_copy(update={"water": water}, deep=True)
+        zone_updates: dict[ZoneId, ZoneState] = {}
+        for zone_id, zone in self._state.zones.items():
+            received_at = zone.telemetry.received_at
+            if received_at is None:
+                age_s = None
+                online = False
+            else:
+                age_s = max(0.0, (now - received_at).total_seconds())
+                online = age_s <= self._stale_telemetry_after_s
+            zone_updates[zone_id] = zone.model_copy(
+                update={"telemetry_age_s": age_s, "online": online},
+                deep=True,
+            )
+        return self._state.model_copy(
+            update={"water": water, "zones": zone_updates},
+            deep=True,
+        )
 
     def get_zone(self, zone_id: str) -> ZoneState:
         canonical_zone_id = self._require_zone(zone_id)
         with self._lock:
-            return self._state.zones[canonical_zone_id].model_copy(deep=True)
+            return self._state_snapshot().zones[canonical_zone_id].model_copy(deep=True)
 
     def list_scenarios(self) -> tuple[SimulationScenarioSummary, ...]:
         return tuple(summary.model_copy(deep=True) for summary in self._scenario_summaries)
@@ -467,7 +495,7 @@ class ApplicationStateStore:
             measured_at = update.last_measured_at
             age_s = None
             if measured_at is not None:
-                now = _utc_now()
+                now = self._now_provider()
                 if measured_at > now:
                     raise ValueError("last_measured_at cannot be in the future")
                 age_s = (now - measured_at).total_seconds()
@@ -496,11 +524,12 @@ class ApplicationStateStore:
                 schema_version=self._state.schema_version,
                 data_mode=self._state.data_mode,
                 active_scenario_id=self._state.active_scenario_id,
-                updated_at=_utc_now(),
+                updated_at=self._now_provider(),
                 zones=self._state.zones,
                 water=water,
                 weather=self._state.weather,
                 power=self._state.power,
+                telemetry_connection=self._state.telemetry_connection,
             )
             return source.model_copy(deep=True)
 
@@ -530,6 +559,26 @@ class ApplicationStateStore:
             )
             self._replace_zone(canonical_zone_id, updated_zone)
             return updated_zone.model_copy(deep=True)
+
+    def update_telemetry_connection(
+        self,
+        connection: SerialConnectionState,
+    ) -> SerialConnectionState:
+        """Publish receive-only gateway status without altering zone telemetry."""
+
+        with self._lock:
+            self._state = self._state.model_copy(
+                update={
+                    "telemetry_connection": connection,
+                    "updated_at": self._now_provider(),
+                },
+                deep=True,
+            )
+            return connection.model_copy(deep=True)
+
+    def get_telemetry_connection(self) -> SerialConnectionState:
+        with self._lock:
+            return self._state.telemetry_connection.model_copy(deep=True)
 
     def get_vivayu_health(self, zone_id: str) -> VivayuHealthState:
         canonical_zone_id = self._require_zone(zone_id)
@@ -561,7 +610,7 @@ class ApplicationStateStore:
                 for zone_id, zone in self._state.zones.items()
             }
             self._state = self._state.model_copy(
-                update={"zones": zones, "updated_at": _utc_now()},
+                update={"zones": zones, "updated_at": self._now_provider()},
                 deep=True,
             )
             return {
@@ -576,7 +625,7 @@ class ApplicationStateStore:
                     "live weather cannot overwrite simulation scenario weather"
                 )
             self._state = self._state.model_copy(
-                update={"weather": weather, "updated_at": _utc_now()},
+                update={"weather": weather, "updated_at": self._now_provider()},
                 deep=True,
             )
             return weather.model_copy(deep=True)
@@ -588,11 +637,12 @@ class ApplicationStateStore:
             schema_version=self._state.schema_version,
             data_mode=self._state.data_mode,
             active_scenario_id=self._state.active_scenario_id,
-            updated_at=_utc_now(),
+            updated_at=self._now_provider(),
             zones=zones,
             water=self._state.water,
             weather=self._state.weather,
             power=self._state.power,
+            telemetry_connection=self._state.telemetry_connection,
         )
 
 

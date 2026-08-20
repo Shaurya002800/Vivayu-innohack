@@ -43,6 +43,21 @@ const PowerIcon = () => (
 export function SystemSummary({ state }: { state: SystemState }) {
   const { fresh, marginal } = state.water;
   const weather = state.weather;
+  const telemetryConnection = state.telemetry_connection;
+  const telemetryValue = telemetryConnection.status === "CONNECTED"
+    ? "Connected"
+    : telemetryConnection.status === "DISABLED"
+      ? "Simulation only"
+      : telemetryConnection.status === "CONNECTING"
+        ? "Connecting"
+        : "Not connected";
+  const telemetryDetail = telemetryConnection.status === "CONNECTED"
+    ? `${telemetryConnection.packets_received.toLocaleString("en-IN")} valid packets · receive-only; actuators unavailable`
+    : telemetryConnection.status === "DISABLED"
+      ? "Serial hardware is not opened in simulation"
+      : telemetryConnection.reconnect_pending
+        ? "Receive-only reconnect pending"
+        : "Actuator controller remains unavailable";
 
   return (
     <section className="system-summary" aria-labelledby="system-overview-title">
@@ -87,9 +102,9 @@ export function SystemSummary({ state }: { state: SystemState }) {
           icon={<LeafIcon />}
         />
         <SummaryMetric
-          eyebrow="Controller"
-          value="Not connected"
-          detail="Serial integration begins in Milestone 9"
+          eyebrow="Telemetry gateway"
+          value={telemetryValue}
+          detail={telemetryDetail}
           icon={<PowerIcon />}
         />
         <SummaryMetric
