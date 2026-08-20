@@ -1,0 +1,36 @@
+{
+  "model_type": "single_feature_threshold_baseline",
+  "feature": "gas_resistance_ohm",
+  "training_days": [
+    1,
+    2
+  ],
+  "test_day": 3,
+  "training_rows": 68,
+  "test_rows": 54,
+  "training_class_counts": {
+    "controlled": 38,
+    "diseased": 30
+  },
+  "test_class_counts": {
+    "controlled": 28,
+    "diseased": 26
+  },
+  "threshold": {
+    "threshold": 107380.5,
+    "direction": "lower_is_diseased",
+    "training_balanced_accuracy": 0.9166666666666667
+  },
+  "test_metrics": {
+    "true_negative": 28,
+    "false_positive": 0,
+    "false_negative": 11,
+    "true_positive": 15,
+    "accuracy": 0.7962962962962963,
+    "balanced_accuracy": 0.7884615384615384,
+    "sensitivity": 0.5769230769230769,
+    "specificity": 1.0,
+    "precision": 1.0
+  },
+  "interpretation_boundary": "This is a within-experiment, time-ordered baseline. It is not external validation because the dataset has no independent plant, chamber, or experimental-run identifier."
+}

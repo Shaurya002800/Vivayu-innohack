@@ -1,0 +1,67 @@
+{
+  "window_size_readings": 5,
+  "accepted_readings": 241,
+  "unflagged_readings_available": 195,
+  "readings_used_in_windows": 185,
+  "unused_remainder_readings": 10,
+  "windows_created": 37,
+  "windows_by_day_and_condition": [
+    {
+      "experimental_day": 1,
+      "condition": "controlled",
+      "usable_readings": 12,
+      "windows": 2,
+      "unused_remainder_readings": 2
+    },
+    {
+      "experimental_day": 1,
+      "condition": "diseased",
+      "usable_readings": 5,
+      "windows": 1,
+      "unused_remainder_readings": 0
+    },
+    {
+      "experimental_day": 2,
+      "condition": "controlled",
+      "usable_readings": 26,
+      "windows": 5,
+      "unused_remainder_readings": 1
+    },
+    {
+      "experimental_day": 2,
+      "condition": "diseased",
+      "usable_readings": 25,
+      "windows": 5,
+      "unused_remainder_readings": 0
+    },
+    {
+      "experimental_day": 3,
+      "condition": "controlled",
+      "usable_readings": 28,
+      "windows": 5,
+      "unused_remainder_readings": 3
+    },
+    {
+      "experimental_day": 3,
+      "condition": "diseased",
+      "usable_readings": 26,
+      "windows": 5,
+      "unused_remainder_readings": 1
+    },
+    {
+      "experimental_day": 4,
+      "condition": "diseased",
+      "usable_readings": 35,
+      "windows": 7,
+      "unused_remainder_readings": 0
+    },
+    {
+      "experimental_day": 5,
+      "condition": "diseased",
+      "usable_readings": 38,
+      "windows": 7,
+      "unused_remainder_readings": 3
+    }
+  ],
+  "important_boundary": "Windows are consecutive readings within one day and condition, ordered by source row. They are non-overlapping to avoid creating near-duplicate training examples."
+}

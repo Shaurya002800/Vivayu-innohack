@@ -1,0 +1,209 @@
+{
+  "selection_status": "research_candidate_only",
+  "selection_method": "leave_one_experiment_day_out on unflagged Days 1-3",
+  "eligible_days": [
+    1,
+    2,
+    3
+  ],
+  "eligible_rows": 122,
+  "features": [
+    "temperature_c",
+    "humidity_pct",
+    "pressure_pa",
+    "gas_resistance_ohm",
+    "sraw"
+  ],
+  "candidate_summary": [
+    {
+      "candidate": "gas_threshold",
+      "mean_balanced_accuracy": 0.8961538461538461,
+      "min_balanced_accuracy": 0.7884615384615384,
+      "mean_accuracy": 0.8994190268700072,
+      "mean_sensitivity": 0.7923076923076923
+    },
+    {
+      "candidate": "extra_trees",
+      "mean_balanced_accuracy": 0.6342490842490842,
+      "min_balanced_accuracy": 0.4,
+      "mean_accuracy": 0.630718954248366,
+      "mean_sensitivity": 0.7923076923076923
+    },
+    {
+      "candidate": "logistic_regression",
+      "mean_balanced_accuracy": 0.5628205128205128,
+      "min_balanced_accuracy": 0.4,
+      "mean_accuracy": 0.6314451706608569,
+      "mean_sensitivity": 0.45897435897435895
+    },
+    {
+      "candidate": "random_forest",
+      "mean_balanced_accuracy": 0.4794871794871794,
+      "min_balanced_accuracy": 0.28846153846153844,
+      "mean_accuracy": 0.4389978213507626,
+      "mean_sensitivity": 0.7923076923076923
+    },
+    {
+      "candidate": "rbf_svm",
+      "mean_balanced_accuracy": 0.45567765567765567,
+      "min_balanced_accuracy": 0.4,
+      "mean_accuracy": 0.38307915758896155,
+      "mean_sensitivity": 0.7923076923076923
+    }
+  ],
+  "fold_results": [
+    {
+      "candidate": "gas_threshold",
+      "held_out_day": 1,
+      "training_rows": 105,
+      "test_rows": 17,
+      "accuracy": 1.0,
+      "balanced_accuracy": 1.0,
+      "precision": 1.0,
+      "sensitivity": 1.0
+    },
+    {
+      "candidate": "gas_threshold",
+      "held_out_day": 2,
+      "training_rows": 71,
+      "test_rows": 51,
+      "accuracy": 0.9019607843137255,
+      "balanced_accuracy": 0.9,
+      "precision": 1.0,
+      "sensitivity": 0.8
+    },
+    {
+      "candidate": "gas_threshold",
+      "held_out_day": 3,
+      "training_rows": 68,
+      "test_rows": 54,
+      "accuracy": 0.7962962962962963,
+      "balanced_accuracy": 0.7884615384615384,
+      "precision": 1.0,
+      "sensitivity": 0.5769230769230769
+    },
+    {
+      "candidate": "logistic_regression",
+      "held_out_day": 1,
+      "training_rows": 105,
+      "test_rows": 17,
+      "accuracy": 0.7058823529411765,
+      "balanced_accuracy": 0.5,
+      "precision": 0.0,
+      "sensitivity": 0.0
+    },
+    {
+      "candidate": "logistic_regression",
+      "held_out_day": 2,
+      "training_rows": 71,
+      "test_rows": 51,
+      "accuracy": 0.39215686274509803,
+      "balanced_accuracy": 0.4,
+      "precision": 0.43478260869565216,
+      "sensitivity": 0.8
+    },
+    {
+      "candidate": "logistic_regression",
+      "held_out_day": 3,
+      "training_rows": 68,
+      "test_rows": 54,
+      "accuracy": 0.7962962962962963,
+      "balanced_accuracy": 0.7884615384615384,
+      "precision": 1.0,
+      "sensitivity": 0.5769230769230769
+    },
+    {
+      "candidate": "rbf_svm",
+      "held_out_day": 1,
+      "training_rows": 105,
+      "test_rows": 17,
+      "accuracy": 0.29411764705882354,
+      "balanced_accuracy": 0.5,
+      "precision": 0.29411764705882354,
+      "sensitivity": 1.0
+    },
+    {
+      "candidate": "rbf_svm",
+      "held_out_day": 2,
+      "training_rows": 71,
+      "test_rows": 51,
+      "accuracy": 0.39215686274509803,
+      "balanced_accuracy": 0.4,
+      "precision": 0.43478260869565216,
+      "sensitivity": 0.8
+    },
+    {
+      "candidate": "rbf_svm",
+      "held_out_day": 3,
+      "training_rows": 68,
+      "test_rows": 54,
+      "accuracy": 0.46296296296296297,
+      "balanced_accuracy": 0.46703296703296704,
+      "precision": 0.45454545454545453,
+      "sensitivity": 0.5769230769230769
+    },
+    {
+      "candidate": "random_forest",
+      "held_out_day": 1,
+      "training_rows": 105,
+      "test_rows": 17,
+      "accuracy": 0.6470588235294118,
+      "balanced_accuracy": 0.75,
+      "precision": 0.45454545454545453,
+      "sensitivity": 1.0
+    },
+    {
+      "candidate": "random_forest",
+      "held_out_day": 2,
+      "training_rows": 71,
+      "test_rows": 51,
+      "accuracy": 0.39215686274509803,
+      "balanced_accuracy": 0.4,
+      "precision": 0.43478260869565216,
+      "sensitivity": 0.8
+    },
+    {
+      "candidate": "random_forest",
+      "held_out_day": 3,
+      "training_rows": 68,
+      "test_rows": 54,
+      "accuracy": 0.2777777777777778,
+      "balanced_accuracy": 0.28846153846153844,
+      "precision": 0.3488372093023256,
+      "sensitivity": 0.5769230769230769
+    },
+    {
+      "candidate": "extra_trees",
+      "held_out_day": 1,
+      "training_rows": 105,
+      "test_rows": 17,
+      "accuracy": 1.0,
+      "balanced_accuracy": 1.0,
+      "precision": 1.0,
+      "sensitivity": 1.0
+    },
+    {
+      "candidate": "extra_trees",
+      "held_out_day": 2,
+      "training_rows": 71,
+      "test_rows": 51,
+      "accuracy": 0.39215686274509803,
+      "balanced_accuracy": 0.4,
+      "precision": 0.43478260869565216,
+      "sensitivity": 0.8
+    },
+    {
+      "candidate": "extra_trees",
+      "held_out_day": 3,
+      "training_rows": 68,
+      "test_rows": 54,
+      "accuracy": 0.5,
+      "balanced_accuracy": 0.5027472527472527,
+      "precision": 0.4838709677419355,
+      "sensitivity": 0.5769230769230769
+    }
+  ],
+  "selected_candidate": "gas_threshold",
+  "selected_candidate_mean_balanced_accuracy": 0.8961538461538461,
+  "selection_boundary": "This score selects a research candidate from one small experiment. It is not an external field-accuracy claim and must not be used for automated crop treatment decisions."
+}

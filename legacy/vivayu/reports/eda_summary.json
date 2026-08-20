@@ -1,0 +1,149 @@
+{
+  "accepted_rows": 241,
+  "unflagged_rows": 195,
+  "quality_flags": {
+    "exact_duplicate_rows": 44,
+    "nonincreasing_timestamp_rows": 43,
+    "any_flagged_rows": 46
+  },
+  "accepted_counts_by_day_and_condition": [
+    {
+      "experimental_day": 1,
+      "condition": "controlled",
+      "rows": 32
+    },
+    {
+      "experimental_day": 1,
+      "condition": "diseased",
+      "rows": 22
+    },
+    {
+      "experimental_day": 2,
+      "condition": "controlled",
+      "rows": 26
+    },
+    {
+      "experimental_day": 2,
+      "condition": "diseased",
+      "rows": 26
+    },
+    {
+      "experimental_day": 3,
+      "condition": "controlled",
+      "rows": 28
+    },
+    {
+      "experimental_day": 3,
+      "condition": "diseased",
+      "rows": 27
+    },
+    {
+      "experimental_day": 4,
+      "condition": "controlled",
+      "rows": 7
+    },
+    {
+      "experimental_day": 4,
+      "condition": "diseased",
+      "rows": 35
+    },
+    {
+      "experimental_day": 5,
+      "condition": "controlled",
+      "rows": 0
+    },
+    {
+      "experimental_day": 5,
+      "condition": "diseased",
+      "rows": 38
+    }
+  ],
+  "unflagged_medians_by_day_and_condition": [
+    {
+      "experimental_day": 1,
+      "condition": "controlled",
+      "temperature_c": 29.8,
+      "humidity_pct": 47.400000000000006,
+      "gas_resistance_ohm": 151101.0,
+      "sraw": 29573.0
+    },
+    {
+      "experimental_day": 1,
+      "condition": "diseased",
+      "temperature_c": 32.4,
+      "humidity_pct": 52.76,
+      "gas_resistance_ohm": 53676.0,
+      "sraw": 28143.0
+    },
+    {
+      "experimental_day": 2,
+      "condition": "controlled",
+      "temperature_c": 32.265,
+      "humidity_pct": 50.525000000000006,
+      "gas_resistance_ohm": 121685.0,
+      "sraw": 29349.0
+    },
+    {
+      "experimental_day": 2,
+      "condition": "diseased",
+      "temperature_c": 32.49,
+      "humidity_pct": 48.4,
+      "gas_resistance_ohm": 74425.0,
+      "sraw": 29127.0
+    },
+    {
+      "experimental_day": 3,
+      "condition": "controlled",
+      "temperature_c": 32.1,
+      "humidity_pct": 47.25,
+      "gas_resistance_ohm": 121244.5,
+      "sraw": 29471.0
+    },
+    {
+      "experimental_day": 3,
+      "condition": "diseased",
+      "temperature_c": 32.0,
+      "humidity_pct": 48.86,
+      "gas_resistance_ohm": 95592.5,
+      "sraw": 29055.0
+    },
+    {
+      "experimental_day": 4,
+      "condition": "diseased",
+      "temperature_c": 30.98,
+      "humidity_pct": 51.0,
+      "gas_resistance_ohm": 64707.0,
+      "sraw": 28498.0
+    },
+    {
+      "experimental_day": 5,
+      "condition": "diseased",
+      "temperature_c": 30.99,
+      "humidity_pct": 50.545,
+      "gas_resistance_ohm": 75635.5,
+      "sraw": 28530.0
+    }
+  ],
+  "overall_medians_by_condition": [
+    {
+      "condition": "controlled",
+      "temperature_c": 32.105000000000004,
+      "humidity_pct": 47.47,
+      "gas_resistance_ohm": 121685.0,
+      "sraw": 29465.5
+    },
+    {
+      "condition": "diseased",
+      "temperature_c": 31.02,
+      "humidity_pct": 50.44,
+      "gas_resistance_ohm": 72056.0,
+      "sraw": 28548.0
+    }
+  ],
+  "analysis_notes": [
+    "Day 5 has no controlled readings, so direct healthy-versus-diseased comparison is unavailable for that day.",
+    "Day 4 has only seven controlled readings versus 35 diseased readings.",
+    "No plant, chamber, or experimental-run identifier exists in this dataset; a random row split would risk time-series leakage.",
+    "Plots use unflagged records for trends and scatter plots; the count chart uses all accepted records."
+  ]
+}

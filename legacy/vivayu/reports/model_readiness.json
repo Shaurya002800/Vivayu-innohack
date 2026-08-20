@@ -1,0 +1,57 @@
+{
+  "status": "research_only_not_deployable",
+  "row_level_data": {
+    "accepted_readings": 241,
+    "unflagged_readings": 195,
+    "unflagged_coverage_by_day": [
+      {
+        "experimental_day": 1,
+        "controlled": 12,
+        "diseased": 5
+      },
+      {
+        "experimental_day": 2,
+        "controlled": 26,
+        "diseased": 25
+      },
+      {
+        "experimental_day": 3,
+        "controlled": 28,
+        "diseased": 26
+      },
+      {
+        "experimental_day": 4,
+        "controlled": 0,
+        "diseased": 35
+      },
+      {
+        "experimental_day": 5,
+        "controlled": 0,
+        "diseased": 38
+      }
+    ]
+  },
+  "window_level_data": {
+    "windows": 37,
+    "window_features": 33,
+    "training_windows_days_1_2": 13,
+    "test_windows_day_3": 10
+  },
+  "random_forest_holdout": {
+    "balanced_accuracy": 0.28846153846153844,
+    "sensitivity": 0.5769230769230769,
+    "specificity": 0.0
+  },
+  "reasons": [
+    "The saved multifeature Random Forest has poor Day 3 holdout performance.",
+    "The dataset has no independent plant, chamber, or experimental-run identifier for external validation.",
+    "Window features outnumber available training windows, making a window model prone to memorization.",
+    "Controlled readings are missing for experiment day(s): 4, 5."
+  ],
+  "next_data_needed": [
+    "Collect controlled and diseased data for every experiment day under the same sampling protocol.",
+    "Record plant_id, chamber_id, sensor_id, experimental_run_id, and an infection ground-truth label.",
+    "Use multiple plants per condition and repeat the experiment on separate runs.",
+    "Keep sampling rate, sensor warm-up, heater settings, compensation, distance, and airflow consistent."
+  ]
+}

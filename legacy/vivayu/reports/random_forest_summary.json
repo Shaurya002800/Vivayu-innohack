@@ -1,0 +1,83 @@
+{
+  "model_type": "random_forest_binary_classifier",
+  "features": [
+    "temperature_c",
+    "humidity_pct",
+    "pressure_pa",
+    "gas_resistance_ohm",
+    "sraw"
+  ],
+  "excluded_columns": [
+    "sample_id",
+    "source_row",
+    "source_cell",
+    "experimental_day",
+    "timestamp_ms",
+    "condition",
+    "label",
+    "infection_days",
+    "quality_flag"
+  ],
+  "training_days": [
+    1,
+    2
+  ],
+  "test_day": 3,
+  "training_rows": 68,
+  "test_rows": 54,
+  "training_class_counts": {
+    "controlled": 38,
+    "diseased": 30
+  },
+  "test_class_counts": {
+    "controlled": 28,
+    "diseased": 26
+  },
+  "model_parameters": {
+    "n_estimators": 300,
+    "max_depth": 4,
+    "min_samples_leaf": 3,
+    "class_weight": "balanced",
+    "random_state": 42,
+    "decision_threshold": 0.5
+  },
+  "training_metrics": {
+    "accuracy": 1.0,
+    "balanced_accuracy": 1.0,
+    "precision": 1.0,
+    "sensitivity": 1.0,
+    "specificity": 1.0,
+    "confusion_matrix": {
+      "true_negative": 38,
+      "false_positive": 0,
+      "false_negative": 0,
+      "true_positive": 30
+    }
+  },
+  "test_metrics": {
+    "accuracy": 0.2777777777777778,
+    "balanced_accuracy": 0.28846153846153844,
+    "precision": 0.3488372093023256,
+    "sensitivity": 0.5769230769230769,
+    "specificity": 0.0,
+    "confusion_matrix": {
+      "true_negative": 0,
+      "false_positive": 28,
+      "false_negative": 11,
+      "true_positive": 15
+    }
+  },
+  "test_prediction_counts": {
+    "predicted_controlled": 11,
+    "predicted_diseased": 43
+  },
+  "mean_test_disease_probability": 0.6229464319384022,
+  "feature_importance": {
+    "sraw": 0.39081976213148284,
+    "gas_resistance_ohm": 0.32664595002747454,
+    "temperature_c": 0.1486832149161063,
+    "humidity_pct": 0.08271298831326207,
+    "pressure_pa": 0.051138084611674225
+  },
+  "interpretation_boundary": "This is a time-ordered within-experiment holdout, not external validation. Feature importance describes this model's reliance on variables; it does not prove causal disease biomarkers."
+}

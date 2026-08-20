@@ -1,0 +1,85 @@
+{
+  "accepted_rows": 241,
+  "rejected_rows": 117,
+  "accepted_by_day_and_condition": [
+    {
+      "experimental_day": 1,
+      "condition": "controlled",
+      "accepted_rows": 32
+    },
+    {
+      "experimental_day": 1,
+      "condition": "diseased",
+      "accepted_rows": 22
+    },
+    {
+      "experimental_day": 2,
+      "condition": "controlled",
+      "accepted_rows": 26
+    },
+    {
+      "experimental_day": 2,
+      "condition": "diseased",
+      "accepted_rows": 26
+    },
+    {
+      "experimental_day": 3,
+      "condition": "controlled",
+      "accepted_rows": 28
+    },
+    {
+      "experimental_day": 3,
+      "condition": "diseased",
+      "accepted_rows": 27
+    },
+    {
+      "experimental_day": 4,
+      "condition": "controlled",
+      "accepted_rows": 7
+    },
+    {
+      "experimental_day": 4,
+      "condition": "diseased",
+      "accepted_rows": 35
+    },
+    {
+      "experimental_day": 5,
+      "condition": "diseased",
+      "accepted_rows": 38
+    }
+  ],
+  "rejections_by_reason": {
+    "missing_sensor_payload": 117
+  },
+  "flagged_rows": 46,
+  "labels": {
+    "healthy": 93,
+    "infected_day_5": 38,
+    "infected_day_4": 35,
+    "infected_day_3": 27,
+    "infected_day_2": 26,
+    "infected_day_1": 22
+  },
+  "measurement_ranges": {
+    "temperature_c": {
+      "min": 28.93,
+      "max": 32.62
+    },
+    "humidity_pct": {
+      "min": 44.01,
+      "max": 56.13
+    },
+    "pressure_pa": {
+      "min": 97472.0,
+      "max": 97805.0
+    },
+    "gas_resistance_ohm": {
+      "min": 6180.0,
+      "max": 160902.0
+    },
+    "sraw": {
+      "min": 25315.0,
+      "max": 29727.0
+    }
+  }
+}
