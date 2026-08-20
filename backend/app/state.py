@@ -30,6 +30,10 @@ from app.schemas import (
     ZoneTelemetry,
 )
 from app.services.crop_service import CropService, crop_service as default_crop_service
+from app.services.vivayu_health_service import (
+    VivayuHealthService,
+    resolve_model_path,
+)
 
 
 SCENARIOS_PATH = Path(__file__).resolve().parent / "data" / "demo_scenarios.json"
@@ -76,11 +80,15 @@ class ApplicationStateStore:
         data_mode: DataMode = "simulation",
         *,
         crop_service: CropService = default_crop_service,
+        vivayu_service: VivayuHealthService | None = None,
         today_provider: Callable[[], date] = date.today,
     ) -> None:
         self._lock = RLock()
         self._data_mode = data_mode
         self._crop_service = crop_service
+        self._vivayu_service = vivayu_service or VivayuHealthService(
+            model_path=resolve_model_path(settings.vivayu_model_path)
+        )
         self._today_provider = today_provider
         document = json.loads(scenario_path.read_text(encoding="utf-8"))
         if document.get("schema_version") != "1.0":
@@ -137,11 +145,14 @@ class ApplicationStateStore:
         return state_payload
 
     def _new_initial_state(self) -> SystemState:
+        self._vivayu_service.reset_all_predictors()
         if self._data_mode == "hardware":
             return self._new_safe_hardware_state()
-        return self._with_derived_contexts(
-            SystemState.model_validate(
-                self._state_payload(self._baseline_payload, active_scenario_id=None)
+        return self._with_initial_vivayu_health(
+            self._with_derived_contexts(
+                SystemState.model_validate(
+                    self._state_payload(self._baseline_payload, active_scenario_id=None)
+                )
             )
         )
 
@@ -168,8 +179,14 @@ class ApplicationStateStore:
                 telemetry_age_s=None,
                 online=False,
                 vivayu_health=VivayuHealthState(
+                    status="UNAVAILABLE",
                     available=False,
+                    source_mode="HARDWARE",
+                    reason_code="WAITING_FOR_COMPATIBLE_HARDWARE_TELEMETRY",
                     reason="waiting_for_compatible_hardware_telemetry",
+                    warnings=(
+                        "legacy Vivayu output is research-only and never controls irrigation",
+                    ),
                 ),
             )
         return self._with_derived_contexts(SystemState(
@@ -196,6 +213,21 @@ class ApplicationStateStore:
             ),
             power=PowerState(connected=False),
         ))
+
+    def _with_initial_vivayu_health(self, state: SystemState) -> SystemState:
+        zones: dict[ZoneId, ZoneState] = {}
+        for zone_id, zone in state.zones.items():
+            health = self._vivayu_service.add_zone_reading(
+                zone_id,
+                zone.telemetry,
+                zone.config.vivayu_sensors,
+                data_mode=state.data_mode,
+            )
+            zones[zone_id] = zone.model_copy(
+                update={"vivayu_health": health},
+                deep=True,
+            )
+        return state.model_copy(update={"zones": zones}, deep=True)
 
     def _with_derived_contexts(self, state: SystemState) -> SystemState:
         zones: dict[ZoneId, ZoneState] = {}
@@ -310,10 +342,13 @@ class ApplicationStateStore:
             raise UnknownScenarioError(scenario_id) from error
 
         with self._lock:
+            self._vivayu_service.reset_all_predictors()
             merged = _deep_merge(self._baseline_payload, overrides)
-            self._state = self._with_derived_contexts(
-                SystemState.model_validate(
-                    self._state_payload(merged, active_scenario_id=scenario_id)
+            self._state = self._with_initial_vivayu_health(
+                self._with_derived_contexts(
+                    SystemState.model_validate(
+                        self._state_payload(merged, active_scenario_id=scenario_id)
+                    )
                 )
             )
             return self._state.model_copy(deep=True)
@@ -334,6 +369,15 @@ class ApplicationStateStore:
                 config,
                 on_date=self._today_provider(),
             )
+            health = current_zone.vivayu_health
+            if config.vivayu_sensors != current_zone.config.vivayu_sensors:
+                self._vivayu_service.reset_zone_predictor(canonical_zone_id)
+                health = self._vivayu_service.add_zone_reading(
+                    canonical_zone_id,
+                    current_zone.telemetry,
+                    config.vivayu_sensors,
+                    data_mode=self._state.data_mode,
+                )
             updated_zone = ZoneState(
                 zone_id=canonical_zone_id,
                 config=config,
@@ -343,7 +387,7 @@ class ApplicationStateStore:
                 crop_context=context,
                 telemetry_age_s=current_zone.telemetry_age_s,
                 online=current_zone.online,
-                vivayu_health=current_zone.vivayu_health,
+                vivayu_health=health,
             )
             self._replace_zone(canonical_zone_id, updated_zone)
             return updated_zone.model_copy(deep=True)
@@ -467,6 +511,12 @@ class ApplicationStateStore:
 
         with self._lock:
             current = self._state.zones[canonical_zone_id]
+            health = self._vivayu_service.add_zone_reading(
+                canonical_zone_id,
+                telemetry,
+                current.config.vivayu_sensors,
+                data_mode=self._state.data_mode,
+            )
             updated_zone = ZoneState(
                 zone_id=canonical_zone_id,
                 config=current.config,
@@ -476,10 +526,48 @@ class ApplicationStateStore:
                 crop_context=current.crop_context,
                 telemetry_age_s=0.0,
                 online=True,
-                vivayu_health=current.vivayu_health,
+                vivayu_health=health,
             )
             self._replace_zone(canonical_zone_id, updated_zone)
             return updated_zone.model_copy(deep=True)
+
+    def get_vivayu_health(self, zone_id: str) -> VivayuHealthState:
+        canonical_zone_id = self._require_zone(zone_id)
+        with self._lock:
+            return self._state.zones[canonical_zone_id].vivayu_health.model_copy(
+                deep=True
+            )
+
+    def reset_zone_vivayu_predictor(self, zone_id: str) -> VivayuHealthState:
+        canonical_zone_id = self._require_zone(zone_id)
+        with self._lock:
+            health = self._vivayu_service.reset_zone_predictor(canonical_zone_id)
+            current = self._state.zones[canonical_zone_id]
+            updated = current.model_copy(
+                update={"vivayu_health": health},
+                deep=True,
+            )
+            self._replace_zone(canonical_zone_id, updated)
+            return health.model_copy(deep=True)
+
+    def reset_all_vivayu_predictors(self) -> dict[ZoneId, VivayuHealthState]:
+        with self._lock:
+            health_by_zone = self._vivayu_service.reset_all_predictors()
+            zones = {
+                zone_id: zone.model_copy(
+                    update={"vivayu_health": health_by_zone[zone_id]},
+                    deep=True,
+                )
+                for zone_id, zone in self._state.zones.items()
+            }
+            self._state = self._state.model_copy(
+                update={"zones": zones, "updated_at": _utc_now()},
+                deep=True,
+            )
+            return {
+                zone_id: health.model_copy(deep=True)
+                for zone_id, health in health_by_zone.items()
+            }
 
     def update_weather(self, weather: WeatherState) -> WeatherState:
         with self._lock:

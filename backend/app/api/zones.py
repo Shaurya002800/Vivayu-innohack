@@ -2,7 +2,14 @@
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.schemas import CropContext, StageOverrideRequest, ZoneConfig, ZoneId, ZoneState
+from app.schemas import (
+    CropContext,
+    StageOverrideRequest,
+    VivayuHealthState,
+    ZoneConfig,
+    ZoneId,
+    ZoneState,
+)
 from app.services.crop_service import FutureSowingDateError, UnknownCropError
 from app.state import UnknownZoneError, application_state
 
@@ -32,6 +39,11 @@ def get_zone_crop_context(zone_id: ZoneId) -> CropContext:
             detail="crop context is unavailable",
         )
     return context
+
+
+@router.get("/{zone_id}/vivayu-health", response_model=VivayuHealthState)
+def get_zone_vivayu_health(zone_id: ZoneId) -> VivayuHealthState:
+    return application_state.get_vivayu_health(zone_id)
 
 
 @router.put("/{zone_id}/config", response_model=ZoneState)

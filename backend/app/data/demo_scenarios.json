@@ -14,7 +14,11 @@
           "manual_growth_stage": null,
           "soil_sensor_id": "soil-a",
           "field_node_id": "field-node-a",
-          "enabled": true
+          "enabled": true,
+          "vivayu_sensors": {
+            "environment_sensor": "BME680",
+            "voc_sensor": "SGP40_COMPATIBLE"
+          }
         },
         "telemetry": {
           "schema_version": "1.0",
@@ -58,7 +62,11 @@
           "manual_growth_stage": "vegetative",
           "soil_sensor_id": "soil-b",
           "field_node_id": "field-node-b",
-          "enabled": true
+          "enabled": true,
+          "vivayu_sensors": {
+            "environment_sensor": "BME680",
+            "voc_sensor": "SGP40_COMPATIBLE"
+          }
         },
         "telemetry": {
           "schema_version": "1.0",
@@ -257,17 +265,15 @@
       "overrides": {
         "zones": {
           "B": {
+            "config": {
+              "vivayu_sensors": {
+                "environment_sensor": "BME280",
+                "voc_sensor": "UNKNOWN"
+              }
+            },
             "telemetry": {
               "gas_resistance_ohm": null,
               "sraw": null
-            },
-            "vivayu_health": {
-              "available": false,
-              "risk_level": null,
-              "pattern": null,
-              "confidence_pct": null,
-              "research_only": true,
-              "reason": "legacy_vivayu_sensor_signature_incomplete"
             }
           }
         }

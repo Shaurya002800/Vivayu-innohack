@@ -81,7 +81,12 @@ def test_legacy_ml_unavailable_keeps_missing_sensors_null() -> None:
     assert zone_b.telemetry.sraw is None
     assert zone_b.vivayu_health.available is False
     assert zone_b.vivayu_health.research_only is True
-    assert zone_b.vivayu_health.reason == "legacy_vivayu_sensor_signature_incomplete"
+    assert zone_b.vivayu_health.status == "UNAVAILABLE"
+    assert (
+        zone_b.vivayu_health.reason_code
+        == "BME280_GAS_RESISTANCE_UNAVAILABLE"
+    )
+    assert "BME680 gas-resistance" in zone_b.vivayu_health.reason
 
 
 def test_loading_a_new_scenario_cannot_leak_previous_overrides() -> None:

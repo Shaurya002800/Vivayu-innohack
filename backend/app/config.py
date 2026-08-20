@@ -75,6 +75,9 @@ class Settings:
     allocation_ratio_tolerance: float = float(
         os.getenv("ALLOCATION_RATIO_TOLERANCE", "0.000001")
     )
+    vivayu_model_path: str | None = (
+        os.getenv("VIVAYU_MODEL_PATH", "").strip() or None
+    )
 
 
 settings = Settings()

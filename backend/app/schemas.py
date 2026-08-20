@@ -21,6 +21,24 @@ WeatherProviderStatus = Literal[
     "NOT_FETCHED",
 ]
 RiskLevel = Literal["low", "watch", "elevated", "high"]
+VivayuHealthStatus = Literal["UNAVAILABLE", "COLLECTING", "READY", "ERROR"]
+VivayuSourceMode = Literal["SIMULATION", "HARDWARE"]
+VivayuEnvironmentSensor = Literal["BME680", "BME280", "UNKNOWN"]
+VivayuVocSensor = Literal["SGP40_COMPATIBLE", "AGS10", "UNKNOWN"]
+VivayuHealthReasonCode = Literal[
+    "COLLECTING_COMPATIBLE_READINGS",
+    "LEGACY_RESEARCH_WINDOW_READY",
+    "LEGACY_VIVAYU_SENSOR_SIGNATURE_INCOMPLETE",
+    "BME280_GAS_RESISTANCE_UNAVAILABLE",
+    "BME680_GAS_RESISTANCE_CHANNEL_UNAVAILABLE",
+    "SGP40_SRAW_CHANNEL_UNAVAILABLE",
+    "AGS10_NOT_COMPATIBLE_WITH_SGP40_SRAW",
+    "SENSOR_COMPATIBILITY_NOT_CONFIRMED",
+    "LEGACY_READING_INVALID",
+    "LEGACY_MODEL_UNAVAILABLE",
+    "PREDICTOR_RESET",
+    "WAITING_FOR_COMPATIBLE_HARDWARE_TELEMETRY",
+]
 CropContextStatus = Literal[
     "READY",
     "CROP_UNCONFIGURED",
@@ -184,6 +202,13 @@ class PrototypeWaterQualityParameters(CanonicalModel):
     constraint_basis: Literal["prototype_or_sourced"] = "prototype_or_sourced"
 
 
+class VivayuSensorConfiguration(CanonicalModel):
+    """Explicit provenance required before legacy sensor values may enter the model."""
+
+    environment_sensor: VivayuEnvironmentSensor = "UNKNOWN"
+    voc_sensor: VivayuVocSensor = "UNKNOWN"
+
+
 class ZoneConfig(CanonicalModel):
     zone_id: ZoneId
     name: Annotated[str, Field(min_length=1)]
@@ -199,6 +224,9 @@ class ZoneConfig(CanonicalModel):
     )
     water_quality_parameters: PrototypeWaterQualityParameters = Field(
         default_factory=PrototypeWaterQualityParameters
+    )
+    vivayu_sensors: VivayuSensorConfiguration = Field(
+        default_factory=VivayuSensorConfiguration
     )
 
     @model_validator(mode="after")
@@ -338,22 +366,60 @@ class CropContext(CanonicalModel):
 
 
 class VivayuHealthState(CanonicalModel):
+    status: VivayuHealthStatus
     available: bool = False
     risk_level: RiskLevel | None = None
     pattern: str | None = None
+    research_score: UnitInterval | None = None
+    research_score_note: str | None = None
     confidence_pct: Percentage | None = None
+    confidence_note: str | None = None
+    model_name: str | None = None
+    readings_received: NonNegativeInt = 0
+    readings_required: Annotated[int, Field(gt=0)] = 5
+    readings_in_window: NonNegativeInt = 0
+    last_updated_at: AwareDatetime | None = None
+    source_mode: VivayuSourceMode | None = None
     research_only: Literal[True] = True
+    reason_code: VivayuHealthReasonCode | None = None
     reason: str | None = None
+    warnings: tuple[Annotated[str, Field(min_length=1)], ...] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def infer_additive_status(cls, value: object) -> object:
+        if isinstance(value, dict) and value.get("status") is None:
+            value = dict(value)
+            value["status"] = "READY" if value.get("available") else "UNAVAILABLE"
+        return value
 
     @model_validator(mode="after")
     def validate_availability(self) -> Self:
-        result_fields = (self.risk_level, self.pattern, self.confidence_pct)
-        if self.available and (self.risk_level is None or self.pattern is None):
-            raise ValueError("available Vivayu state requires risk_level and pattern")
+        result_fields = (
+            self.risk_level,
+            self.pattern,
+            self.research_score,
+            self.confidence_pct,
+        )
+        if self.available != (self.status in {"COLLECTING", "READY"}):
+            raise ValueError("Vivayu availability does not match status")
+        if self.status == "READY" and (
+            self.risk_level is None or self.pattern is None
+        ):
+            raise ValueError("ready Vivayu state requires risk_level and pattern")
+        if self.status != "READY" and any(value is not None for value in result_fields):
+            raise ValueError("non-ready Vivayu state cannot contain model results")
+        if self.status == "COLLECTING":
+            if self.readings_received >= self.readings_required:
+                raise ValueError("collecting Vivayu state must have an incomplete window")
+            if self.readings_in_window != self.readings_received:
+                raise ValueError("collecting counts must match the current window")
+        if self.status == "READY" and self.readings_in_window > self.readings_required:
+            raise ValueError("Vivayu rolling window cannot exceed its configured size")
+        if self.status in {"UNAVAILABLE", "ERROR"} and not self.reason:
+            raise ValueError("unavailable Vivayu state requires a reason")
         if not self.available and any(value is not None for value in result_fields):
             raise ValueError("unavailable Vivayu state cannot contain model results")
-        if not self.available and not self.reason:
-            raise ValueError("unavailable Vivayu state requires a reason")
         return self
 
 
