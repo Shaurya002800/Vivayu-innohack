@@ -33,6 +33,29 @@ class Settings:
     )
     weather_cache_minutes: float = float(os.getenv("WEATHER_CACHE_MINUTES", "15"))
     weather_request_timeout_s: float = float(os.getenv("WEATHER_REQUEST_TIMEOUT_SECONDS", "5"))
+    irrigation_stale_telemetry_after_s: float = float(os.getenv("ZONE_STALE_SECONDS", "10"))
+    irrigation_strong_rain_probability_pct: float = float(
+        os.getenv("IRRIGATION_STRONG_RAIN_PROBABILITY_PCT", "70")
+    )
+    irrigation_meaningful_rain_6h_mm: float = float(
+        os.getenv("IRRIGATION_MEANINGFUL_RAIN_6H_MM", "2")
+    )
+    irrigation_high_et0_6h_mm: float = float(
+        os.getenv("IRRIGATION_HIGH_ET0_6H_MM", "1")
+    )
+    irrigation_soil_deficit_weight: float = float(
+        os.getenv("IRRIGATION_SOIL_DEFICIT_WEIGHT", "0.60")
+    )
+    irrigation_critical_moisture_boost: float = float(
+        os.getenv("IRRIGATION_CRITICAL_MOISTURE_BOOST", "0.25")
+    )
+    irrigation_high_stage_sensitivity_boost: float = float(
+        os.getenv("IRRIGATION_HIGH_STAGE_SENSITIVITY_BOOST", "0.10")
+    )
+    irrigation_moderate_stage_sensitivity_boost: float = float(
+        os.getenv("IRRIGATION_MODERATE_STAGE_SENSITIVITY_BOOST", "0.05")
+    )
+    irrigation_high_et0_boost: float = float(os.getenv("IRRIGATION_HIGH_ET0_BOOST", "0.05"))
 
 
 settings = Settings()

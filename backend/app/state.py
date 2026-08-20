@@ -14,6 +14,7 @@ from app.schemas import (
     DataMode,
     MixWaterState,
     PowerState,
+    PrototypeIrrigationParameters,
     SimulationScenarioSummary,
     SystemState,
     VivayuHealthState,
@@ -294,6 +295,29 @@ class ApplicationStateStore:
                     **current.config.model_dump(),
                     "growth_stage_mode": "MANUAL",
                     "manual_growth_stage": growth_stage,
+                }
+            )
+            return self.update_zone_config(canonical_zone_id, config)
+
+    def get_irrigation_parameters(self, zone_id: str) -> PrototypeIrrigationParameters:
+        canonical_zone_id = self._require_zone(zone_id)
+        with self._lock:
+            return self._state.zones[
+                canonical_zone_id
+            ].config.irrigation_parameters.model_copy(deep=True)
+
+    def update_irrigation_parameters(
+        self,
+        zone_id: str,
+        parameters: PrototypeIrrigationParameters,
+    ) -> ZoneState:
+        canonical_zone_id = self._require_zone(zone_id)
+        with self._lock:
+            current = self._state.zones[canonical_zone_id]
+            config = ZoneConfig.model_validate(
+                {
+                    **current.config.model_dump(),
+                    "irrigation_parameters": parameters,
                 }
             )
             return self.update_zone_config(canonical_zone_id, config)

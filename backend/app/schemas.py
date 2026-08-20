@@ -29,10 +29,43 @@ CropContextStatus = Literal[
 ]
 CropStageSource = Literal["AUTO", "MANUAL"]
 WaterStressSensitivity = Literal["low", "moderate", "high"]
+IrrigationNeedStatus = Literal[
+    "NOT_NEEDED",
+    "NEEDED",
+    "CRITICAL",
+    "DEFER_FOR_RAIN",
+    "CONFIG_REQUIRED",
+    "SENSOR_UNAVAILABLE",
+]
+IrrigationUrgency = Literal["none", "low", "moderate", "high", "blocked"]
+IrrigationReasonCode = Literal[
+    "ZONE_DISABLED",
+    "CROP_CONTEXT_INVALID",
+    "TARGET_MOISTURE_MISSING",
+    "CRITICAL_MOISTURE_MISSING",
+    "CALIBRATION_MISSING",
+    "SOIL_SENSOR_MISSING",
+    "TELEMETRY_STALE",
+    "AT_OR_ABOVE_TARGET",
+    "BELOW_TARGET",
+    "AT_OR_BELOW_CRITICAL",
+    "RAIN_DEFERRED",
+    "CRITICAL_OVERRIDES_RAIN",
+    "NO_MEANINGFUL_RAIN",
+    "HIGH_ET0",
+    "SENSITIVE_STAGE",
+]
+IrrigationWarningCode = Literal[
+    "PROTOTYPE_VOLUME_CALIBRATION",
+    "WEATHER_ASSISTANCE_UNAVAILABLE",
+    "STAGE_SENSITIVITY_UNAVAILABLE",
+]
 
-Percentage = Annotated[float, Field(ge=0, le=100)]
-NonNegativeFloat = Annotated[float, Field(ge=0)]
+Percentage = Annotated[float, Field(ge=0, le=100, allow_inf_nan=False)]
+NonNegativeFloat = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 NonNegativeInt = Annotated[int, Field(ge=0)]
+PositiveFloat = Annotated[float, Field(gt=0, allow_inf_nan=False)]
+UnitInterval = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
 
 
 class CanonicalModel(BaseModel):
@@ -48,6 +81,25 @@ class HealthResponse(CanonicalModel):
     schema_version: SchemaVersion = "1.0"
 
 
+class PrototypeIrrigationParameters(CanonicalModel):
+    """Per-zone prototype calibration; values are never supplied implicitly."""
+
+    target_moisture_pct: Percentage | None = None
+    critical_moisture_pct: Percentage | None = None
+    ml_per_moisture_point: PositiveFloat | None = None
+    calibration_basis: Literal["prototype_field_response"] = "prototype_field_response"
+
+    @model_validator(mode="after")
+    def validate_threshold_order(self) -> Self:
+        if (
+            self.target_moisture_pct is not None
+            and self.critical_moisture_pct is not None
+            and self.critical_moisture_pct >= self.target_moisture_pct
+        ):
+            raise ValueError("critical_moisture_pct must be lower than target_moisture_pct")
+        return self
+
+
 class ZoneConfig(CanonicalModel):
     zone_id: ZoneId
     name: Annotated[str, Field(min_length=1)]
@@ -58,6 +110,9 @@ class ZoneConfig(CanonicalModel):
     soil_sensor_id: str | None = None
     field_node_id: str | None = None
     enabled: bool = True
+    irrigation_parameters: PrototypeIrrigationParameters = Field(
+        default_factory=PrototypeIrrigationParameters
+    )
 
     @model_validator(mode="after")
     def validate_manual_stage(self) -> Self:
@@ -117,6 +172,16 @@ class CropMoistureTargets(CanonicalModel):
     source_id: str | None = None
     notes: Annotated[str, Field(min_length=1)]
 
+    @model_validator(mode="after")
+    def validate_threshold_order(self) -> Self:
+        if (
+            self.target_moisture_pct is not None
+            and self.critical_moisture_pct is not None
+            and self.critical_moisture_pct >= self.target_moisture_pct
+        ):
+            raise ValueError("critical crop moisture must be lower than target crop moisture")
+        return self
+
 
 class CropSalinityConstraint(CanonicalModel):
     max_irrigation_tds_ppm: NonNegativeFloat | None = None
@@ -173,6 +238,16 @@ class CropContext(CanonicalModel):
     max_irrigation_tds_ppm: NonNegativeFloat | None = None
     source_ids: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_threshold_order(self) -> Self:
+        if (
+            self.target_moisture_pct is not None
+            and self.critical_moisture_pct is not None
+            and self.critical_moisture_pct >= self.target_moisture_pct
+        ):
+            raise ValueError("critical crop context moisture must be lower than target")
+        return self
 
 
 class VivayuHealthState(CanonicalModel):
@@ -269,6 +344,98 @@ class WeatherState(CanonicalModel):
             raise ValueError("offline weather cannot contain forecast values")
         if self.fetched_at is None and self.age_s is not None:
             raise ValueError("weather age requires fetched_at")
+        return self
+
+
+class IrrigationNeedPolicy(CanonicalModel):
+    """Configurable, API-visible constants used by the pure preview engine."""
+
+    stale_telemetry_after_s: PositiveFloat
+    strong_rain_probability_pct: Percentage
+    meaningful_rain_6h_mm: NonNegativeFloat
+    high_et0_6h_mm: PositiveFloat
+    soil_deficit_weight: UnitInterval
+    critical_moisture_boost: UnitInterval
+    high_stage_sensitivity_boost: UnitInterval
+    moderate_stage_sensitivity_boost: UnitInterval
+    high_et0_boost: UnitInterval
+
+    @model_validator(mode="after")
+    def validate_urgency_weights(self) -> Self:
+        if self.moderate_stage_sensitivity_boost > self.high_stage_sensitivity_boost:
+            raise ValueError("moderate stage boost cannot exceed high stage boost")
+        maximum = (
+            self.soil_deficit_weight
+            + self.critical_moisture_boost
+            + self.high_stage_sensitivity_boost
+            + self.high_et0_boost
+        )
+        if maximum > 1:
+            raise ValueError("maximum irrigation urgency component sum cannot exceed 1")
+        return self
+
+
+class IrrigationUrgencyComponents(CanonicalModel):
+    soil_deficit: UnitInterval = 0.0
+    critical_moisture: UnitInterval = 0.0
+    stage_sensitivity: UnitInterval = 0.0
+    high_et0: UnitInterval = 0.0
+
+
+class IrrigationNeedResult(CanonicalModel):
+    zone_id: ZoneId
+    status: IrrigationNeedStatus
+    urgency: IrrigationUrgency
+    urgency_score: UnitInterval | None = None
+    urgency_components: IrrigationUrgencyComponents | None = None
+    needs_irrigation: bool
+    actionable: bool
+    current_moisture_pct: Percentage | None = None
+    target_moisture_pct: Percentage | None = None
+    critical_moisture_pct: Percentage | None = None
+    moisture_deficit_pct: Percentage | None = None
+    ml_per_moisture_point: PositiveFloat | None = None
+    base_requested_ml: NonNegativeFloat | None = None
+    requested_water_ml: NonNegativeFloat | None = None
+    telemetry_age_s: NonNegativeFloat | None = None
+    crop_context_status: CropContextStatus | None = None
+    growth_stage: str | None = None
+    stage_sensitivity: WaterStressSensitivity | None = None
+    weather_status: WeatherStatus
+    weather_assistance_available: bool
+    rain_deferral_applied: bool = False
+    et0_urgency_applied: bool = False
+    stage_urgency_applied: bool = False
+    policy: IrrigationNeedPolicy
+    reason_codes: tuple[IrrigationReasonCode, ...]
+    reasons: tuple[Annotated[str, Field(min_length=1)], ...]
+    warning_codes: tuple[IrrigationWarningCode, ...] = ()
+    warnings: tuple[Annotated[str, Field(min_length=1)], ...] = ()
+
+    @model_validator(mode="after")
+    def validate_result_consistency(self) -> Self:
+        actionable_statuses = {"NEEDED", "CRITICAL"}
+        expected_actionable = self.status in actionable_statuses
+        if self.actionable != expected_actionable or self.needs_irrigation != expected_actionable:
+            raise ValueError("irrigation action flags do not match result status")
+        if not self.reasons or not self.reason_codes:
+            raise ValueError("irrigation result requires explanation reasons")
+        if len(self.reason_codes) != len(self.reasons):
+            raise ValueError("irrigation reason codes and messages must align")
+        if len(self.warning_codes) != len(self.warnings):
+            raise ValueError("irrigation warning codes and messages must align")
+        if self.status in {"CONFIG_REQUIRED", "SENSOR_UNAVAILABLE"}:
+            unavailable_values = (
+                self.moisture_deficit_pct,
+                self.base_requested_ml,
+                self.requested_water_ml,
+                self.urgency_score,
+                self.urgency_components,
+            )
+            if any(value is not None for value in unavailable_values):
+                raise ValueError("blocked irrigation result cannot contain calculated outputs")
+        elif self.requested_water_ml is None or self.urgency_score is None:
+            raise ValueError("evaluated irrigation result requires water and urgency outputs")
         return self
 
 
