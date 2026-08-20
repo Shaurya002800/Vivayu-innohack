@@ -1,4 +1,269 @@
 {
   "schema_version": "1.0",
-  "scenarios": []
+  "baseline_state": {
+    "schema_version": "1.0",
+    "zones": {
+      "A": {
+        "zone_id": "A",
+        "config": {
+          "zone_id": "A",
+          "name": "Zone A",
+          "crop_id": "tomato",
+          "sowing_date": "2026-07-10",
+          "growth_stage_mode": "AUTO",
+          "manual_growth_stage": null,
+          "soil_sensor_id": "soil-a",
+          "field_node_id": "field-node-a",
+          "enabled": true
+        },
+        "telemetry": {
+          "schema_version": "1.0",
+          "type": "field_telemetry",
+          "node_id": "field-node-a",
+          "zone_id": "A",
+          "timestamp_ms": 1181072,
+          "soil_moisture_raw": 2600,
+          "soil_moisture_pct": 32.0,
+          "temperature_c": 30.6,
+          "humidity_pct": 62.4,
+          "pressure_pa": 97481.0,
+          "gas_resistance_ohm": 62070.0,
+          "sraw": 29005,
+          "battery_voltage_v": 3.91,
+          "battery_pct": 74.0,
+          "signal_rssi_dbm": -62.0,
+          "received_at": "2026-08-20T16:30:00+05:30"
+        },
+        "growth_stage": null,
+        "days_after_sowing": null,
+        "telemetry_age_s": 1.0,
+        "online": true,
+        "vivayu_health": {
+          "available": false,
+          "risk_level": null,
+          "pattern": null,
+          "confidence_pct": null,
+          "research_only": true,
+          "reason": "legacy_vivayu_not_integrated_milestone_2"
+        }
+      },
+      "B": {
+        "zone_id": "B",
+        "config": {
+          "zone_id": "B",
+          "name": "Zone B",
+          "crop_id": "chilli",
+          "sowing_date": "2026-07-20",
+          "growth_stage_mode": "MANUAL",
+          "manual_growth_stage": "vegetative",
+          "soil_sensor_id": "soil-b",
+          "field_node_id": "field-node-b",
+          "enabled": true
+        },
+        "telemetry": {
+          "schema_version": "1.0",
+          "type": "field_telemetry",
+          "node_id": "field-node-b",
+          "zone_id": "B",
+          "timestamp_ms": 1181082,
+          "soil_moisture_raw": 2300,
+          "soil_moisture_pct": 40.0,
+          "temperature_c": 30.4,
+          "humidity_pct": 61.9,
+          "pressure_pa": 97479.0,
+          "gas_resistance_ohm": 61800.0,
+          "sraw": 28990,
+          "battery_voltage_v": 3.88,
+          "battery_pct": 69.0,
+          "signal_rssi_dbm": -65.0,
+          "received_at": "2026-08-20T16:30:01+05:30"
+        },
+        "growth_stage": "vegetative",
+        "days_after_sowing": null,
+        "telemetry_age_s": 1.2,
+        "online": true,
+        "vivayu_health": {
+          "available": false,
+          "risk_level": null,
+          "pattern": null,
+          "confidence_pct": null,
+          "research_only": true,
+          "reason": "legacy_vivayu_not_integrated_milestone_2"
+        }
+      }
+    },
+    "water": {
+      "fresh": {
+        "tds_ppm": 220.0,
+        "temperature_c": 25.5,
+        "available_l": 1.0,
+        "last_measured_at": "2026-08-20T16:15:00+05:30"
+      },
+      "marginal": {
+        "tds_ppm": 820.0,
+        "temperature_c": 25.7,
+        "available_l": 2.5,
+        "last_measured_at": "2026-08-20T16:16:00+05:30"
+      },
+      "mix": {
+        "tds_ppm": null,
+        "temperature_c": null,
+        "volume_estimate_ml": null,
+        "last_measured_at": null
+      }
+    },
+    "weather": {
+      "status": "SIMULATED",
+      "rain_probability_6h_pct": 15.0,
+      "rain_6h_mm": 0.2,
+      "et0_6h_mm": 0.9,
+      "temperature_max_6h_c": 33.2,
+      "fetched_at": "2026-08-20T16:10:00+05:30"
+    },
+    "power": {
+      "connected": false,
+      "solar_power_w": null,
+      "battery_voltage_v": null,
+      "battery_pct": null,
+      "load_current_a": null,
+      "measured_at": null
+    }
+  },
+  "scenarios": [
+    {
+      "id": "zone_a_critical",
+      "name": "Zone A critical",
+      "description": "Zone A is critically dry, Zone B is moderately moist, and near-term rain is low.",
+      "overrides": {
+        "zones": {
+          "A": {
+            "telemetry": {
+              "soil_moisture_raw": 2776,
+              "soil_moisture_pct": 22.0
+            }
+          },
+          "B": {
+            "telemetry": {
+              "soil_moisture_raw": 2334,
+              "soil_moisture_pct": 38.0
+            }
+          }
+        },
+        "water": {
+          "fresh": {
+            "available_l": 0.6
+          }
+        },
+        "weather": {
+          "rain_probability_6h_pct": 10.0,
+          "rain_6h_mm": 0.0
+        }
+      }
+    },
+    {
+      "id": "rain_soon",
+      "name": "Rain soon",
+      "description": "A moderately dry zone has a high probability of meaningful rain in the next six hours.",
+      "overrides": {
+        "zones": {
+          "A": {
+            "telemetry": {
+              "soil_moisture_raw": 2600,
+              "soil_moisture_pct": 32.0
+            }
+          }
+        },
+        "weather": {
+          "rain_probability_6h_pct": 85.0,
+          "rain_6h_mm": 7.4,
+          "et0_6h_mm": 0.4,
+          "temperature_max_6h_c": 29.0
+        }
+      }
+    },
+    {
+      "id": "tds_correction",
+      "name": "TDS correction",
+      "description": "The simulated measured final mix TDS is higher than the future configured safety limit.",
+      "overrides": {
+        "water": {
+          "mix": {
+            "tds_ppm": 560.0,
+            "temperature_c": 25.8,
+            "volume_estimate_ml": 400.0,
+            "last_measured_at": "2026-08-20T16:30:00+05:30"
+          }
+        }
+      }
+    },
+    {
+      "id": "freshwater_shortage",
+      "name": "Freshwater shortage",
+      "description": "Both zones are dry while the available freshwater volume is intentionally constrained.",
+      "overrides": {
+        "zones": {
+          "A": {
+            "telemetry": {
+              "soil_moisture_raw": 2710,
+              "soil_moisture_pct": 24.0
+            }
+          },
+          "B": {
+            "telemetry": {
+              "soil_moisture_raw": 2580,
+              "soil_moisture_pct": 27.0
+            }
+          }
+        },
+        "water": {
+          "fresh": {
+            "available_l": 0.25
+          }
+        },
+        "weather": {
+          "rain_probability_6h_pct": 8.0,
+          "rain_6h_mm": 0.0
+        }
+      }
+    },
+    {
+      "id": "sensor_offline",
+      "name": "Sensor offline",
+      "description": "Zone A retains its last reading but is marked offline because telemetry is stale.",
+      "overrides": {
+        "zones": {
+          "A": {
+            "telemetry_age_s": 90.0,
+            "online": false,
+            "telemetry": {
+              "received_at": "2026-08-20T16:20:00+05:30"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "legacy_ml_unavailable",
+      "name": "Legacy ML unavailable",
+      "description": "Zone B lacks the compatible gas-resistance and SGP40 raw sensor signature.",
+      "overrides": {
+        "zones": {
+          "B": {
+            "telemetry": {
+              "gas_resistance_ohm": null,
+              "sraw": null
+            },
+            "vivayu_health": {
+              "available": false,
+              "risk_level": null,
+              "pattern": null,
+              "confidence_pct": null,
+              "research_only": true,
+              "reason": "legacy_vivayu_sensor_signature_incomplete"
+            }
+          }
+        }
+      }
+    }
+  ]
 }
