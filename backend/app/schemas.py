@@ -99,12 +99,50 @@ IrrigationWarningCode = Literal[
     "WEATHER_ASSISTANCE_UNAVAILABLE",
     "STAGE_SENSITIVITY_UNAVAILABLE",
 ]
+AllocationStatus = Literal[
+    "FULLY_SERVED",
+    "PARTIALLY_SERVED",
+    "DEFERRED_NO_FRESHWATER",
+    "DEFERRED_NO_SAFE_WATER",
+    "NO_IRRIGATION",
+    "BLOCKED",
+]
+AllocationReasonCode = Literal[
+    "NO_IRRIGATION_REQUEST",
+    "IRRIGATION_INPUT_BLOCKED",
+    "WATER_QUALITY_INPUT_BLOCKED",
+    "SOURCE_AVAILABILITY_UNKNOWN",
+    "FULL_REQUEST_ALLOCATED",
+    "PARTIAL_REQUEST_ALLOCATED",
+    "NO_FRESHWATER_AVAILABLE",
+    "NO_SAFE_SOURCE_CAPACITY",
+    "CRITICAL_MINIMUM_PHASE",
+    "CRITICAL_MINIMUM_MET",
+    "CRITICAL_MINIMUM_NOT_MET",
+    "M4_URGENCY_PRIORITY",
+    "DETERMINISTIC_ZONE_ID_TIE_BREAK",
+    "SAFE_SOURCE_RATIO_PRESERVED",
+    "MARGINAL_ONLY_NO_FRESHWATER",
+    "GLOBAL_FRESHWATER_SCARCITY",
+    "GLOBAL_MARGINAL_SCARCITY",
+    "SOURCE_CAPACITY_SUFFICIENT",
+]
+AllocationWarningCode = Literal[
+    "PROTOTYPE_MINIMUM_NOT_SURVIVAL_GUARANTEE",
+    "PARTIAL_DELIVERY",
+    "CRITICAL_MINIMUM_UNMET",
+    "PHYSICAL_TDS_VERIFICATION_REQUIRED",
+    "NO_WATER_DEDUCTED_PREVIEW",
+    "SOURCE_AVAILABILITY_UNKNOWN",
+    "MARGINAL_CAPACITY_LIMITED",
+]
 
 Percentage = Annotated[float, Field(ge=0, le=100, allow_inf_nan=False)]
 NonNegativeFloat = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 NonNegativeInt = Annotated[int, Field(ge=0)]
 PositiveFloat = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 UnitInterval = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
+PositiveUnitInterval = Annotated[float, Field(gt=0, le=1, allow_inf_nan=False)]
 
 
 class CanonicalModel(BaseModel):
@@ -609,6 +647,196 @@ class IrrigationNeedResult(CanonicalModel):
                 raise ValueError("blocked irrigation result cannot contain calculated outputs")
         elif self.requested_water_ml is None or self.urgency_score is None:
             raise ValueError("evaluated irrigation result requires water and urgency outputs")
+        return self
+
+
+class FreshwaterAllocationPolicy(CanonicalModel):
+    """Visible prototype scarcity policy; not an agronomic survival guarantee."""
+
+    critical_minimum_delivery_fraction: PositiveUnitInterval
+    volume_rounding_decimals: Annotated[int, Field(ge=0, le=9)]
+    volume_tolerance_ml: PositiveFloat
+    ratio_tolerance: PositiveFloat
+
+
+class ZoneAllocationInput(CanonicalModel):
+    zone_id: ZoneId
+    irrigation_need: IrrigationNeedResult
+    water_quality: WaterQualityResult
+
+    @model_validator(mode="after")
+    def validate_zone_identity(self) -> Self:
+        if self.irrigation_need.zone_id != self.zone_id:
+            raise ValueError("irrigation input does not match allocation zone")
+        if self.water_quality.zone_id != self.zone_id:
+            raise ValueError("water-quality input does not match allocation zone")
+        return self
+
+
+class ZoneWaterAllocation(CanonicalModel):
+    zone_id: ZoneId
+    status: AllocationStatus
+    irrigation_status: IrrigationNeedStatus
+    water_quality_strategy: WaterQualityStrategy
+    urgency_score: UnitInterval | None = None
+    critical: bool
+    stage_sensitivity: WaterStressSensitivity | None = None
+    requested_water_ml: NonNegativeFloat | None = None
+    full_request_fresh_ml: NonNegativeFloat | None = None
+    full_request_marginal_ml: NonNegativeFloat | None = None
+    required_fresh_fraction: UnitInterval | None = None
+    required_marginal_fraction: UnitInterval | None = None
+    allocated_fresh_ml: NonNegativeFloat = 0.0
+    allocated_marginal_ml: NonNegativeFloat = 0.0
+    deliverable_water_ml: NonNegativeFloat = 0.0
+    service_fraction: UnitInterval | None = None
+    allocated_fresh_fraction: UnitInterval | None = None
+    allocated_marginal_fraction: UnitInterval | None = None
+    full_request_predicted_tds_ppm: NonNegativeFloat | None = None
+    safe_ratio_preserved: bool | None = None
+    critical_minimum_target_ml: NonNegativeFloat | None = None
+    critical_minimum_met: bool | None = None
+    reason_codes: tuple[AllocationReasonCode, ...]
+    reasons: tuple[Annotated[str, Field(min_length=1)], ...]
+    warning_codes: tuple[AllocationWarningCode, ...] = ()
+    warnings: tuple[Annotated[str, Field(min_length=1)], ...] = ()
+
+    @model_validator(mode="after")
+    def validate_allocation_shape(self) -> Self:
+        if not self.reason_codes or len(self.reason_codes) != len(self.reasons):
+            raise ValueError("zone allocation requires aligned explanations")
+        if len(self.warning_codes) != len(self.warnings):
+            raise ValueError("zone allocation warning codes and messages must align")
+        if self.status in {"NO_IRRIGATION", "BLOCKED", "DEFERRED_NO_FRESHWATER", "DEFERRED_NO_SAFE_WATER"}:
+            if any(
+                value > 0
+                for value in (
+                    self.allocated_fresh_ml,
+                    self.allocated_marginal_ml,
+                    self.deliverable_water_ml,
+                )
+            ):
+                raise ValueError("non-delivery allocation status cannot contain delivered water")
+        if self.deliverable_water_ml > 0:
+            if self.water_quality_strategy not in {
+                "MARGINAL_ONLY",
+                "CONTROLLED_BLEND",
+                "FRESH_ONLY",
+            }:
+                raise ValueError("delivered water requires a safe Milestone 5 strategy")
+            if self.safe_ratio_preserved is not True:
+                raise ValueError("delivered water must preserve a safe source ratio")
+            if self.allocated_fresh_fraction is None or self.allocated_marginal_fraction is None:
+                raise ValueError("delivered water requires allocated source fractions")
+        return self
+
+
+class FreshwaterAllocationResult(CanonicalModel):
+    zones: dict[ZoneId, ZoneWaterAllocation]
+    freshwater_available_ml: NonNegativeFloat | None = None
+    freshwater_required_for_full_service_ml: NonNegativeFloat
+    freshwater_allocated_ml: NonNegativeFloat
+    freshwater_remaining_ml: NonNegativeFloat | None = None
+    marginal_available_ml: NonNegativeFloat | None = None
+    marginal_required_for_full_service_ml: NonNegativeFloat
+    marginal_allocated_ml: NonNegativeFloat
+    marginal_remaining_ml: NonNegativeFloat | None = None
+    scarcity_active: bool | None = None
+    total_requested_water_ml: NonNegativeFloat
+    total_deliverable_water_ml: NonNegativeFloat
+    unserved_water_ml: NonNegativeFloat
+    critical_phase_order: tuple[ZoneId, ...] = ()
+    remaining_phase_order: tuple[ZoneId, ...] = ()
+    policy: FreshwaterAllocationPolicy
+    reason_codes: tuple[AllocationReasonCode, ...]
+    reasons: tuple[Annotated[str, Field(min_length=1)], ...]
+    warning_codes: tuple[AllocationWarningCode, ...] = ()
+    warnings: tuple[Annotated[str, Field(min_length=1)], ...] = ()
+
+    @model_validator(mode="after")
+    def validate_allocation_invariants(self) -> Self:
+        tolerance = self.policy.volume_tolerance_ml
+        if set(self.zones) != {"A", "B"}:
+            raise ValueError("allocation must contain exactly Zone A and Zone B")
+        if not self.reason_codes or len(self.reason_codes) != len(self.reasons):
+            raise ValueError("global allocation requires aligned explanations")
+        if len(self.warning_codes) != len(self.warnings):
+            raise ValueError("global allocation warning codes and messages must align")
+
+        fresh_sum = sum(zone.allocated_fresh_ml for zone in self.zones.values())
+        marginal_sum = sum(zone.allocated_marginal_ml for zone in self.zones.values())
+        delivered_sum = sum(zone.deliverable_water_ml for zone in self.zones.values())
+        requested_sum = sum(
+            zone.requested_water_ml or 0.0 for zone in self.zones.values()
+        )
+        checks = (
+            (fresh_sum, self.freshwater_allocated_ml, "freshwater allocation total"),
+            (marginal_sum, self.marginal_allocated_ml, "marginal allocation total"),
+            (delivered_sum, self.total_deliverable_water_ml, "delivery total"),
+            (requested_sum, self.total_requested_water_ml, "request total"),
+            (
+                self.total_requested_water_ml - self.total_deliverable_water_ml,
+                self.unserved_water_ml,
+                "unserved total",
+            ),
+        )
+        for calculated, reported, label in checks:
+            if abs(calculated - reported) > tolerance:
+                raise ValueError(f"{label} is inconsistent")
+
+        if self.freshwater_available_ml is not None:
+            if self.freshwater_allocated_ml > self.freshwater_available_ml + tolerance:
+                raise ValueError("allocated freshwater exceeds the bank")
+            expected_remaining = self.freshwater_available_ml - self.freshwater_allocated_ml
+            if self.freshwater_remaining_ml is None or abs(
+                expected_remaining - self.freshwater_remaining_ml
+            ) > tolerance:
+                raise ValueError("freshwater remaining is inconsistent")
+            expected_scarcity = (
+                self.freshwater_required_for_full_service_ml
+                > self.freshwater_available_ml + tolerance
+            )
+            if self.scarcity_active is not expected_scarcity:
+                raise ValueError("freshwater scarcity flag is inconsistent")
+        elif self.freshwater_remaining_ml is not None or self.scarcity_active is not None:
+            raise ValueError("unknown freshwater availability requires nullable metadata")
+
+        if self.marginal_available_ml is not None:
+            if self.marginal_allocated_ml > self.marginal_available_ml + tolerance:
+                raise ValueError("allocated marginal water exceeds the bank")
+            expected_remaining = self.marginal_available_ml - self.marginal_allocated_ml
+            if self.marginal_remaining_ml is None or abs(
+                expected_remaining - self.marginal_remaining_ml
+            ) > tolerance:
+                raise ValueError("marginal water remaining is inconsistent")
+        elif self.marginal_remaining_ml is not None:
+            raise ValueError("unknown marginal availability requires null remaining volume")
+
+        for zone in self.zones.values():
+            if abs(
+                zone.allocated_fresh_ml
+                + zone.allocated_marginal_ml
+                - zone.deliverable_water_ml
+            ) > tolerance:
+                raise ValueError("zone source allocations do not conserve delivery")
+            if (
+                zone.requested_water_ml is not None
+                and zone.deliverable_water_ml > zone.requested_water_ml + tolerance
+            ):
+                raise ValueError("zone delivery exceeds its request")
+            if zone.deliverable_water_ml > tolerance:
+                assert zone.required_fresh_fraction is not None
+                assert zone.required_marginal_fraction is not None
+                assert zone.allocated_fresh_fraction is not None
+                assert zone.allocated_marginal_fraction is not None
+                if zone.allocated_fresh_fraction + self.policy.ratio_tolerance < (
+                    zone.required_fresh_fraction
+                ):
+                    raise ValueError("allocation made a zone mix saltier")
+                if zone.allocated_marginal_fraction > (
+                    zone.required_marginal_fraction + self.policy.ratio_tolerance
+                ):
+                    raise ValueError("allocation exceeded the safe marginal fraction")
         return self
 
 

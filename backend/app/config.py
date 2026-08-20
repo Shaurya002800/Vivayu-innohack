@@ -63,6 +63,18 @@ class Settings:
     tds_prediction_tolerance_ppm: float = float(
         os.getenv("TDS_PREDICTION_TOLERANCE_PPM", "0.000001")
     )
+    allocation_critical_minimum_fraction: float = float(
+        os.getenv("ALLOCATION_CRITICAL_MINIMUM_FRACTION", "0.25")
+    )
+    allocation_rounding_decimals: int = int(
+        os.getenv("ALLOCATION_ROUNDING_DECIMALS", "6")
+    )
+    allocation_volume_tolerance_ml: float = float(
+        os.getenv("ALLOCATION_VOLUME_TOLERANCE_ML", "0.000001")
+    )
+    allocation_ratio_tolerance: float = float(
+        os.getenv("ALLOCATION_RATIO_TOLERANCE", "0.000001")
+    )
 
 
 settings = Settings()

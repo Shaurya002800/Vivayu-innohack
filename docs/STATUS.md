@@ -2,97 +2,103 @@
 
 ## Current milestone
 
-Milestone 5 - Pure water-quality/TDS strategy engine (complete)
+Milestone 6 - Multi-zone freshwater allocation under scarcity (complete)
 
 ## Working
 
-- [x] Milestones 2–4 canonical `ZoneConfig`, `CropContext`, `WaterState`, and `SystemState` are extended rather than duplicated
-- [x] Each zone has an isolated, nullable `max_irrigation_tds_ppm` prototype constraint; no crop limit is invented when unsupported
-- [x] Canonical fresh and marginal source state exposes source identity, display name, nullable TDS/temperature/availability, measurement timestamp/age, and quality status
-- [x] Simulation readings are explicitly labelled `SIMULATED`; hardware readings become `MEASURED`, `STALE`, or `UNKNOWN` from timestamp/data validity
-- [x] Pure `calculate_water_quality_strategy` consumes the Milestone 4 requested-water volume and returns typed, deterministic results
-- [x] Supported strategies are `MARGINAL_ONLY`, `CONTROLLED_BLEND`, `FRESH_ONLY`, `NOT_FEASIBLE`, `CONFIG_REQUIRED`, `SOURCE_QUALITY_UNKNOWN`, and `NO_IRRIGATION_REQUEST`
-- [x] Safety target is calculated as configured crop maximum minus the configurable positive safety margin; the engine never intentionally targets the hard crop limit
-- [x] Controlled blends use the volume-weighted TDS equation and conservatively floor marginal volume to the configured precision
-- [x] Source volumes conserve the requested amount within the explicit tolerance, and predicted TDS cannot validate above the safety target plus its explicit tolerance
-- [x] Missing/stale source TDS, missing crop constraints, invalid safety targets, equal qualities, reversed source qualities, invalid numbers, and zero/negative requests are handled explicitly and conservatively
-- [x] Reversed source qualities are not silently normalized; they return `NOT_FEASIBLE` with a source-label anomaly reason/warning
-- [x] Results separate `predicted_tds_ppm` from future `measured_tds_ppm`; the latter remains `null` throughout Milestone 5
-- [x] Every result contains structured reason codes/messages, warning codes/messages, the active policy, inputs, source fractions/volumes when safe, and current single-zone source sufficiency
-- [x] Availability reporting evaluates only the selected zone's computed volumes; it does not reserve water or compare Zone A with Zone B
-- [x] Water-quality preview is independent of Vivayu health/VOC state and never mutates state, persists a decision, or actuates hardware
-- [x] Changing only source-water TDS can change the chosen water-quality strategy while soil, crop, weather, and irrigation need remain unchanged
-- [x] Water updates, scenario loads, and resets preserve source identity and do not leak mutated source state
-- [x] Zone A and Zone B constraint updates remain fully isolated
-- [x] All six simulation scenarios and all Milestone 2–4 contracts remain operational
+- [x] The allocator consumes canonical frozen `IrrigationNeedResult` and `WaterQualityResult` objects; it does not recalculate crop water demand, urgency, TDS, or blend formulas
+- [x] Allocation operates across exactly Zone A and Zone B with a canonical typed input/result contract
+- [x] Phase 1 gives critically dry actionable zones a configurable prototype minimum delivery where safe source capacity permits
+- [x] Phase 2 allocates remaining source capacity by the existing Milestone 4 urgency score, then Zone ID for deterministic ties
+- [x] No parallel or hidden priority score was introduced; stage sensitivity is preserved as visible M4 context
+- [x] `MARGINAL_ONLY`, `FRESH_ONLY`, and `CONTROLLED_BLEND` are handled from their frozen Milestone 5 source fractions
+- [x] Partial controlled-blend delivery scales fresh and marginal volumes together; reducing freshwater can never retain the full marginal volume and create a saltier ratio
+- [x] Example invariant is enforced and tested: full `300 mL fresh + 200 mL marginal = 500 mL` scaled to `150 mL fresh` becomes `150 + 100 = 250 mL`
+- [x] Allocation may be equally safe or slightly fresher within numeric tolerance, but it may never exceed the Milestone 5 marginal fraction
+- [x] Both freshwater and marginal-water banks are enforced; neither source can be over-allocated
+- [x] Unknown source availability remains `null` and blocks allocation rather than being fabricated as zero
+- [x] Unsafe, configuration-required, source-unknown, sensor-blocked, and other non-actionable upstream results never enter the allocation pool
+- [x] Canonical zone outcomes are `FULLY_SERVED`, `PARTIALLY_SERVED`, `DEFERRED_NO_FRESHWATER`, `DEFERRED_NO_SAFE_WATER`, `NO_IRRIGATION`, and `BLOCKED`
+- [x] Every zone exposes its request, full safe source volumes/fractions, allocated volumes/fractions, deliverable volume, service fraction, critical-minimum status, frozen predicted TDS, and deterministic reasons/warnings
+- [x] Global output exposes both bank capacities/requirements/allocations/remainders, scarcity state, requested/deliverable/unserved totals, both phase orders, policy, and deterministic reasons/warnings
+- [x] Canonical validators enforce non-negative volumes, per-zone and global conservation, delivery not exceeding request, both source-bank ceilings, exact A/B membership, and the non-saltier ratio invariant
+- [x] The allocation preview is pure planning: repeated calls are idempotent and never deduct canonical source availability, persist decisions, or actuate hardware
+- [x] The `freshwater_shortage` simulation scenario feeds its real state into M4, M5, and the allocator; it contains no hard-coded allocation output
+- [x] Changing only the freshwater bank changes delivery while crop, soil, weather, source TDS, and irrigation requests remain unchanged
+- [x] Allocator inputs contain no Vivayu health/VOC signal, and tests prove output is independent of that research-only state
+- [x] Zone configuration, scenario reset, source state, and all Milestone 2–5 behavior remain isolated and operational
 
-## API surface completed in Milestone 5
+## API surface completed in Milestone 6
 
-- `GET /api/v1/water`
-- `PUT /api/v1/water/sources/{source_id}`
-- `GET /api/v1/water/zones/{zone_id}/constraint`
-- `PUT /api/v1/water/zones/{zone_id}/constraint`
-- `GET /api/v1/water/zones/{zone_id}/strategy`
-- Existing `GET /api/v1/state` and zone responses include the additive canonical source metadata and per-zone water-quality constraint
-- No allocation, decision execution, correction, or actuation endpoint was added
+- `GET /api/v1/water/allocation-preview`
+- The endpoint evaluates current Zone A/B state through the existing M4 and M5 engines, then calls the pure allocator
+- Existing Milestone 2–5 endpoints and state contracts remain compatible
+- No execute, allocation commit, decision persistence, correction, or actuation endpoint was added
 
-## Configurable prototype policy defaults
+## Configurable prototype allocation policy
 
-These are visible operating-policy settings, not agronomic claims. Every strategy result returns the active values in its `policy` field.
+These are visible deterministic demo-policy defaults, not universal agronomic or crop-survival claims. Every allocation result returns the active values.
 
-- TDS safety margin: `50 ppm`
-- Source measurement stale threshold: `240 minutes`
-- Source-volume precision: `6 decimal places`
-- Volume-conservation tolerance: `0.000001 ml`
-- Predicted-TDS comparison tolerance: `0.000001 ppm`
+- Critical minimum delivery fraction: `0.25`
+- Allocation volume precision: `6 decimal places`
+- Volume accounting tolerance: `0.000001 ml`
+- Safe-ratio comparison tolerance: `0.000001`
 
-## Assumptions and warnings
+Environment variables:
 
-- `max_irrigation_tds_ppm` must be explicitly configured per zone or come from supported source-backed crop metadata; current demo crop profiles intentionally leave unsupported limits `null`.
-- TDS is treated only as a low-cost incoming-water quality proxy and does not prove long-term root-zone salinity safety.
-- Predicted blend TDS is mathematical, not a physical measurement. Safe previews always warn that Milestone 11 must verify the actual post-mix TDS.
-- The source labelled `fresh` is expected to have no higher TDS than `marginal`; conflicting measured values are treated as a data-quality anomaly rather than silently swapping identities.
-- `source_volume_sufficient` describes only whether this one preview can currently be supplied. It is not a reservation, allocation, or multi-zone scarcity decision.
-- Simulation TDS remains usable regardless of wall-clock age because it is scenario input explicitly labelled `SIMULATED`; hardware readings obey the configured stale threshold.
-- A positive safety margin is required. A margin greater than or equal to the configured crop maximum produces `NOT_FEASIBLE`.
+- `ALLOCATION_CRITICAL_MINIMUM_FRACTION`
+- `ALLOCATION_ROUNDING_DECIMALS`
+- `ALLOCATION_VOLUME_TOLERANCE_ML`
+- `ALLOCATION_RATIO_TOLERANCE`
+
+## Allocation policy and safety assumptions
+
+- Phase 1 is critical protection, not a guarantee of crop survival. Its fraction must be calibrated for a real deployment.
+- Phase 2 is strict deterministic priority order, using M4 urgency descending and Zone A before Zone B only when scores tie.
+- Source capacity is not reserved or deducted by a preview. A later committed irrigation event must own real bank mutation.
+- When source capacity only supports a partial controlled blend, total delivery is reduced along the frozen M5 ray: `fresh = total × fresh_fraction`, `marginal = total × marginal_fraction`.
+- Delivery volume is rounded down only at a scarcity boundary; the residual is left in the source bank deterministically.
+- Source splits retain the safe ratio and volume conservation. The allocator does not calculate a new predicted TDS.
+- The returned predicted TDS is explicitly the frozen M5 full-request prediction. Physical post-mix verification remains required in Milestone 11.
+- `scarcity_active` specifically reports freshwater shortage. Marginal-water shortage is exposed separately through required/available metadata and reasons.
+- TDS remains an incoming-water quality proxy and does not prove long-term root-zone salinity safety.
 
 ## Not working / intentionally deferred
 
-- No Milestone 5 blockers.
-- Multi-zone freshwater competition, reservation, priority, or allocation is intentionally deferred to Milestone 6.
-- Physical mix measurement, correction loops, retry limits, and post-mix verification are intentionally deferred to Milestone 11.
-- Vivayu ML loading, complete decision orchestration, firmware, serial/controller I/O, actuation, persistence, and dashboard expansion remain untouched.
-- Water-quality previews are never automatically executed or persisted.
+- No Milestone 6 blockers.
+- No source-bank deduction, reservation transaction, irrigation event commit, or persistent decision record exists yet.
+- Legacy Vivayu loading/predictors remain deferred to Milestone 7.
+- Dashboard expansion, serial communication, firmware, pumps/valves, controller commands, ACKs, and actuation remain untouched.
+- Physical mixed-TDS measurement/correction remains deferred to Milestone 11.
+- Full decision orchestration remains deferred; this milestone only composes M4/M5 for a read-only allocation preview.
 
 ## Files/features completed
 
-- `backend/app/schemas.py`: canonical source identity/status/update models, per-zone TDS constraint, policy, strategy/result, reasons, warnings, and consistency validation
-- `backend/app/config.py`, `.env.example`: environment-backed TDS safety, freshness, volume, and prediction policy
-- `backend/app/data/demo_scenarios.json`: explicit canonical source identity and simulated-quality labels without adding fabricated readings
-- `backend/app/services/crop_service.py`: zone-configured maximum incoming-water TDS integrated into existing `CropContext`
-- `backend/app/services/water_quality.py`: pure safety-target, weighted prediction, strategy, conservative rounding, explainability, and single-zone sufficiency logic
-- `backend/app/state.py`: lock-protected source and per-zone constraint updates, hardware measurement aging, simulation labelling, and reset isolation
-- `backend/app/api/water.py`, `backend/app/main.py`: source read/write, constraint read/write, and side-effect-free Milestone 4-integrated strategy routes
-- `backend/tests/test_water_quality.py`: pure-engine cases, invalid/stale input, numerical boundaries, availability, Milestone 4 integration, and Vivayu non-interference
-- `backend/tests/test_water_api.py`: API contracts, canonical state integration, A/B isolation, reset behavior, validation, read-only preview, and TDS-only strategy changes
-- `backend/app/api/decisions.py`: intentionally unchanged
+- `backend/app/schemas.py`: allocation statuses, policy, input, per-zone output, global result, reason/warning vocabulary, and invariant validation
+- `backend/app/config.py`, `.env.example`: configurable critical-minimum fraction, precision, volume tolerance, and ratio tolerance
+- `backend/app/services/freshwater_allocator.py`: pure input classification, two-phase priority allocation, two-bank enforcement, ratio-preserving partial delivery, rounding, and explainability
+- `backend/app/api/water.py`: idempotent current-state allocation preview integrating the frozen M4/M5 engines
+- `backend/tests/test_freshwater_allocator.py`: pure allocator boundaries, exact ratio safety, strategies, priorities, source shortages, rounding, invariants, bank-only change, Vivayu independence, and property-style bank ceilings
+- `backend/tests/test_freshwater_allocation_api.py`: full-service integration, idempotency/no deduction, scenario logic/reset, A/B isolation, blocked defaults, bank-only behavior, and no side effects
+- `backend/app/state.py`, `backend/app/api/decisions.py`, and all actuation/legacy files: intentionally unchanged in Milestone 6
 
 ## Tests and verification
 
-- Complete backend suite: `145 passed` (`.venv/bin/python -m pytest -q`)
+- Complete backend suite: `196 passed` (`.venv/bin/python -m pytest -q`)
 - Python compilation: passed (`.venv/bin/python -m compileall -q app tests`)
 - Patch whitespace/error validation: passed (`git diff --check`)
-- Coverage includes all Milestone 2–4 regressions plus marginal-below/equal-target, controlled blend, fresh-only, even-fresh-unsafe, missing crop/source data, stale readings, zero/negative requests, invalid/non-finite TDS, equal/reversed qualities, impossible margins, weighted-equation correctness, floating-point/rounding safety, exact volume conservation, source sufficiency, hardware aging, A/B isolation, simulation reset isolation, Milestone 4 request integration, Vivayu independence, and no actuation/state-mutation side effects.
-- Frontend was not changed in Milestone 5.
+- New coverage includes sufficient banks, combined freshwater shortage, critical vs non-critical, both critical, deterministic ties, marginal-only, fresh-only, two controlled blends, exact proportional down-scaling, zero fresh, zero marginal, both banks insufficient, no irrigation, blocked TDS/configuration, marginal-only freshwater independence, bank ceilings, delivery ceilings, conservation, rounding, A/B isolation, idempotency, no deduction, scenario/reset isolation, Vivayu independence, and freshness-bank-only intelligence.
+- A parameterized property-style test exercises 84 valid strategy/bank combinations and proves total fresh and marginal allocation never exceeds the configured banks.
+- Frontend was not changed in Milestone 6.
 
 ## Last end-to-end run
 
-- Mode: simulation for API integration; hardware mode exercised for safe null source state and stale measurement handling
-- Result: explicit irrigation parameters plus a zone TDS constraint produce deterministic, explained source strategies without allocation or actuation
+- Mode: simulation API integration plus pure deterministic allocator fixtures
+- Result: `SENSORS -> crop/stage -> weather -> M4 amount -> M5 safe source ratio -> M6 scarcity allocation` completes without state mutation or actuation
 - Failure: none
 
 ## Next exact task
 
-1. Freeze Milestone 5 until Milestone 6 is explicitly approved.
-2. Milestone 6 should implement only multi-zone freshwater allocation and scarcity-aware priority using the frozen Milestone 4 irrigation request and Milestone 5 water-quality demand.
-3. Do not add physical TDS correction, Vivayu ML, firmware, actuation, complete decision orchestration, or dashboard expansion unless separately authorized.
+1. Freeze Milestone 6 until Milestone 7 is explicitly approved.
+2. Milestone 7 should implement only the legacy Vivayu research wrapper with one isolated predictor per compatible zone and no irrigation/allocation influence.
+3. Do not add dashboard expansion, serial/controller I/O, firmware, actuation, physical TDS correction, or full decision orchestration unless separately authorized.
