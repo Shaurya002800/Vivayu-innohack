@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from threading import RLock
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 from app.config import settings
 from app.schemas import (
@@ -25,6 +25,7 @@ from app.schemas import (
     ZoneState,
     ZoneTelemetry,
 )
+from app.services.crop_service import CropService, crop_service as default_crop_service
 
 
 SCENARIOS_PATH = Path(__file__).resolve().parent / "data" / "demo_scenarios.json"
@@ -40,6 +41,10 @@ class UnknownScenarioError(KeyError):
 
 class SimulationModeDisabledError(RuntimeError):
     """Raised when simulated telemetry is requested while in hardware mode."""
+
+
+class SimulationWeatherProtectedError(RuntimeError):
+    """Raised when live weather attempts to overwrite a simulation scenario."""
 
 
 def _utc_now() -> datetime:
@@ -61,9 +66,18 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 class ApplicationStateStore:
     """Own the current state and expose only validated deep copies."""
 
-    def __init__(self, scenario_path: Path = SCENARIOS_PATH, data_mode: DataMode = "simulation") -> None:
+    def __init__(
+        self,
+        scenario_path: Path = SCENARIOS_PATH,
+        data_mode: DataMode = "simulation",
+        *,
+        crop_service: CropService = default_crop_service,
+        today_provider: Callable[[], date] = date.today,
+    ) -> None:
         self._lock = RLock()
         self._data_mode = data_mode
+        self._crop_service = crop_service
+        self._today_provider = today_provider
         document = json.loads(scenario_path.read_text(encoding="utf-8"))
         if document.get("schema_version") != "1.0":
             raise ValueError("unsupported demo scenario schema_version")
@@ -121,8 +135,10 @@ class ApplicationStateStore:
     def _new_initial_state(self) -> SystemState:
         if self._data_mode == "hardware":
             return self._new_safe_hardware_state()
-        return SystemState.model_validate(
-            self._state_payload(self._baseline_payload, active_scenario_id=None)
+        return self._with_derived_contexts(
+            SystemState.model_validate(
+                self._state_payload(self._baseline_payload, active_scenario_id=None)
+            )
         )
 
     def _new_safe_hardware_state(self) -> SystemState:
@@ -152,7 +168,7 @@ class ApplicationStateStore:
                     reason="waiting_for_compatible_hardware_telemetry",
                 ),
             )
-        return SystemState(
+        return self._with_derived_contexts(SystemState(
             data_mode="hardware",
             updated_at=_utc_now(),
             zones=zones,
@@ -161,9 +177,48 @@ class ApplicationStateStore:
                 marginal=WaterSourceState(),
                 mix=MixWaterState(),
             ),
-            weather=WeatherState(status="OFFLINE"),
+            weather=WeatherState(
+                status="OFFLINE",
+                stale=True,
+                provider=settings.weather_provider,
+                provider_status="NOT_FETCHED",
+                error="weather forecast has not been fetched",
+            ),
             power=PowerState(connected=False),
-        )
+        ))
+
+    def _with_derived_contexts(self, state: SystemState) -> SystemState:
+        zones: dict[ZoneId, ZoneState] = {}
+        for zone_id, zone in state.zones.items():
+            context = self._crop_service.derive_context(
+                zone.config,
+                on_date=self._today_provider(),
+            )
+            zones[zone_id] = zone.model_copy(
+                update={
+                    "growth_stage": context.growth_stage,
+                    "days_after_sowing": context.days_after_sowing,
+                    "crop_context": context,
+                },
+                deep=True,
+            )
+
+        weather = state.weather
+        if state.data_mode == "simulation":
+            age_s = None
+            if weather.fetched_at is not None:
+                age_s = max(0.0, (_utc_now() - weather.fetched_at).total_seconds())
+            weather = weather.model_copy(
+                update={
+                    "age_s": age_s,
+                    "stale": False,
+                    "provider": "demo_scenarios",
+                    "provider_status": "SIMULATED",
+                    "error": None,
+                },
+                deep=True,
+            )
+        return state.model_copy(update={"zones": zones, "weather": weather}, deep=True)
 
     @staticmethod
     def _require_zone(zone_id: str) -> ZoneId:
@@ -193,8 +248,10 @@ class ApplicationStateStore:
 
         with self._lock:
             merged = _deep_merge(self._baseline_payload, overrides)
-            self._state = SystemState.model_validate(
-                self._state_payload(merged, active_scenario_id=scenario_id)
+            self._state = self._with_derived_contexts(
+                SystemState.model_validate(
+                    self._state_payload(merged, active_scenario_id=scenario_id)
+                )
             )
             return self._state.model_copy(deep=True)
 
@@ -210,14 +267,17 @@ class ApplicationStateStore:
 
         with self._lock:
             current_zone = self._state.zones[canonical_zone_id]
+            context = self._crop_service.derive_context(
+                config,
+                on_date=self._today_provider(),
+            )
             updated_zone = ZoneState(
                 zone_id=canonical_zone_id,
                 config=config,
                 telemetry=current_zone.telemetry,
-                growth_stage=(
-                    config.manual_growth_stage if config.growth_stage_mode == "MANUAL" else None
-                ),
-                days_after_sowing=current_zone.days_after_sowing,
+                growth_stage=context.growth_stage,
+                days_after_sowing=context.days_after_sowing,
+                crop_context=context,
                 telemetry_age_s=current_zone.telemetry_age_s,
                 online=current_zone.online,
                 vivayu_health=current_zone.vivayu_health,
@@ -251,12 +311,25 @@ class ApplicationStateStore:
                 telemetry=telemetry,
                 growth_stage=current.growth_stage,
                 days_after_sowing=current.days_after_sowing,
+                crop_context=current.crop_context,
                 telemetry_age_s=0.0,
                 online=True,
                 vivayu_health=current.vivayu_health,
             )
             self._replace_zone(canonical_zone_id, updated_zone)
             return updated_zone.model_copy(deep=True)
+
+    def update_weather(self, weather: WeatherState) -> WeatherState:
+        with self._lock:
+            if self._state.data_mode == "simulation":
+                raise SimulationWeatherProtectedError(
+                    "live weather cannot overwrite simulation scenario weather"
+                )
+            self._state = self._state.model_copy(
+                update={"weather": weather, "updated_at": _utc_now()},
+                deep=True,
+            )
+            return weather.model_copy(deep=True)
 
     def _replace_zone(self, zone_id: ZoneId, zone: ZoneState) -> None:
         zones = dict(self._state.zones)

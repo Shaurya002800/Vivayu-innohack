@@ -8,6 +8,7 @@ from app.schemas import (
     ZoneConfig,
     ZoneState,
     ZoneTelemetry,
+    WeatherState,
 )
 from app.state import ApplicationStateStore
 
@@ -75,3 +76,8 @@ def test_complete_state_round_trips_through_canonical_schema() -> None:
     assert restored == state
     assert set(restored.zones) == {"A", "B"}
     assert restored.schema_version == "1.0"
+
+
+def test_offline_weather_cannot_contain_fabricated_forecast() -> None:
+    with pytest.raises(ValidationError, match="offline weather"):
+        WeatherState(status="OFFLINE", rain_6h_mm=0.0)

@@ -13,7 +13,22 @@ DataMode = Literal["simulation", "hardware"]
 ZoneId = Literal["A", "B"]
 GrowthStageMode = Literal["AUTO", "MANUAL"]
 WeatherStatus = Literal["SIMULATED", "LIVE", "CACHED", "OFFLINE"]
+WeatherProviderStatus = Literal[
+    "SIMULATED",
+    "OK",
+    "ERROR",
+    "NOT_CONFIGURED",
+    "NOT_FETCHED",
+]
 RiskLevel = Literal["low", "watch", "elevated", "high"]
+CropContextStatus = Literal[
+    "READY",
+    "CROP_UNCONFIGURED",
+    "SOWING_DATE_MISSING",
+    "OUTSIDE_REFERENCE_CALENDAR",
+]
+CropStageSource = Literal["AUTO", "MANUAL"]
+WaterStressSensitivity = Literal["low", "moderate", "high"]
 
 Percentage = Annotated[float, Field(ge=0, le=100)]
 NonNegativeFloat = Annotated[float, Field(ge=0)]
@@ -72,6 +87,94 @@ class ZoneTelemetry(CanonicalModel):
     received_at: AwareDatetime | None = None
 
 
+class SourceMetadata(CanonicalModel):
+    source_id: Annotated[str, Field(min_length=1)]
+    title: Annotated[str, Field(min_length=1)]
+    url: Annotated[str, Field(min_length=1)]
+    notes: str | None = None
+
+
+class CropStageProfile(CanonicalModel):
+    stage_id: Annotated[str, Field(min_length=1)]
+    name: Annotated[str, Field(min_length=1)]
+    start_day: NonNegativeInt | None = None
+    end_day: NonNegativeInt | None = None
+    water_stress_sensitivity: WaterStressSensitivity | None = None
+    crop_coefficient_kc: NonNegativeFloat | None = None
+
+    @model_validator(mode="after")
+    def validate_day_range(self) -> Self:
+        if (self.start_day is None) != (self.end_day is None):
+            raise ValueError("crop stage start_day and end_day must both be set or both be null")
+        if self.start_day is not None and self.end_day is not None and self.end_day < self.start_day:
+            raise ValueError("crop stage end_day must not precede start_day")
+        return self
+
+
+class CropMoistureTargets(CanonicalModel):
+    target_moisture_pct: Percentage | None = None
+    critical_moisture_pct: Percentage | None = None
+    source_id: str | None = None
+    notes: Annotated[str, Field(min_length=1)]
+
+
+class CropSalinityConstraint(CanonicalModel):
+    max_irrigation_tds_ppm: NonNegativeFloat | None = None
+    qualitative_tolerance: str | None = None
+    source_id: str | None = None
+    notes: Annotated[str, Field(min_length=1)]
+
+
+class CropProfile(CanonicalModel):
+    crop_id: Annotated[str, Field(min_length=1)]
+    display_name: Annotated[str, Field(min_length=1)]
+    scientific_name: str | None = None
+    reference_context: Annotated[str, Field(min_length=1)]
+    stages: tuple[CropStageProfile, ...]
+    moisture: CropMoistureTargets
+    salinity: CropSalinityConstraint
+    sources: tuple[SourceMetadata, ...]
+    notes: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_stage_ranges(self) -> Self:
+        source_ids = [source.source_id for source in self.sources]
+        if len(source_ids) != len(set(source_ids)):
+            raise ValueError("crop profile source IDs must be unique")
+        for referenced_source in (self.moisture.source_id, self.salinity.source_id):
+            if referenced_source is not None and referenced_source not in source_ids:
+                raise ValueError(f"crop profile references unknown source: {referenced_source}")
+        seen: set[str] = set()
+        previous_end: int | None = None
+        for stage in self.stages:
+            if stage.stage_id in seen:
+                raise ValueError(f"duplicate crop stage id: {stage.stage_id}")
+            seen.add(stage.stage_id)
+            if stage.start_day is not None:
+                if previous_end is not None and stage.start_day != previous_end + 1:
+                    raise ValueError("configured crop stage ranges must be contiguous")
+                previous_end = stage.end_day
+        return self
+
+
+class CropContext(CanonicalModel):
+    zone_id: ZoneId
+    crop_id: str | None = None
+    crop_name: str | None = None
+    sowing_date: date | None = None
+    days_after_sowing: NonNegativeInt | None = None
+    growth_stage: str | None = None
+    stage_source: CropStageSource | None = None
+    status: CropContextStatus
+    crop_coefficient_kc: NonNegativeFloat | None = None
+    water_stress_sensitivity: WaterStressSensitivity | None = None
+    target_moisture_pct: Percentage | None = None
+    critical_moisture_pct: Percentage | None = None
+    max_irrigation_tds_ppm: NonNegativeFloat | None = None
+    source_ids: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+
+
 class VivayuHealthState(CanonicalModel):
     available: bool = False
     risk_level: RiskLevel | None = None
@@ -98,6 +201,7 @@ class ZoneState(CanonicalModel):
     telemetry: ZoneTelemetry
     growth_stage: str | None = None
     days_after_sowing: NonNegativeInt | None = None
+    crop_context: CropContext | None = None
     telemetry_age_s: NonNegativeFloat | None = None
     online: bool = False
     vivayu_health: VivayuHealthState
@@ -108,6 +212,13 @@ class ZoneState(CanonicalModel):
             raise ValueError("zone config does not match ZoneState zone_id")
         if self.telemetry.zone_id != self.zone_id:
             raise ValueError("zone telemetry does not match ZoneState zone_id")
+        if self.crop_context is not None:
+            if self.crop_context.zone_id != self.zone_id:
+                raise ValueError("crop context does not match ZoneState zone_id")
+            if self.crop_context.growth_stage != self.growth_stage:
+                raise ValueError("crop context growth stage does not match ZoneState")
+            if self.crop_context.days_after_sowing != self.days_after_sowing:
+                raise ValueError("crop context days after sowing do not match ZoneState")
         if self.online and self.telemetry_age_s is None:
             raise ValueError("online zone requires telemetry_age_s")
         return self
@@ -140,6 +251,25 @@ class WeatherState(CanonicalModel):
     et0_6h_mm: NonNegativeFloat | None = None
     temperature_max_6h_c: float | None = None
     fetched_at: AwareDatetime | None = None
+    age_s: NonNegativeFloat | None = None
+    stale: bool = False
+    provider: str | None = None
+    provider_status: WeatherProviderStatus | None = None
+    error: str | None = None
+
+    @model_validator(mode="after")
+    def validate_availability(self) -> Self:
+        forecast_values = (
+            self.rain_probability_6h_pct,
+            self.rain_6h_mm,
+            self.et0_6h_mm,
+            self.temperature_max_6h_c,
+        )
+        if self.status == "OFFLINE" and any(value is not None for value in forecast_values):
+            raise ValueError("offline weather cannot contain forecast values")
+        if self.fetched_at is None and self.age_s is not None:
+            raise ValueError("weather age requires fetched_at")
+        return self
 
 
 class PowerState(CanonicalModel):

@@ -1,4 +1,220 @@
 {
   "schema_version": "1.0",
-  "profiles": []
+  "profiles": [
+    {
+      "crop_id": "tomato",
+      "display_name": "Tomato",
+      "scientific_name": "Solanum lycopersicum",
+      "reference_context": "FAO reference calendar for an April/May Mediterranean planting; local cultivar and climate calibration is required before operational use.",
+      "stages": [
+        {
+          "stage_id": "initial",
+          "name": "Initial",
+          "start_day": 0,
+          "end_day": 29,
+          "water_stress_sensitivity": null,
+          "crop_coefficient_kc": 0.45
+        },
+        {
+          "stage_id": "development",
+          "name": "Crop development",
+          "start_day": 30,
+          "end_day": 69,
+          "water_stress_sensitivity": null,
+          "crop_coefficient_kc": 0.75
+        },
+        {
+          "stage_id": "mid_season",
+          "name": "Mid-season",
+          "start_day": 70,
+          "end_day": 114,
+          "water_stress_sensitivity": "high",
+          "crop_coefficient_kc": 1.15
+        },
+        {
+          "stage_id": "late_season",
+          "name": "Late season",
+          "start_day": 115,
+          "end_day": 144,
+          "water_stress_sensitivity": null,
+          "crop_coefficient_kc": 0.8
+        }
+      ],
+      "moisture": {
+        "target_moisture_pct": null,
+        "critical_moisture_pct": null,
+        "source_id": null,
+        "notes": "No source-backed value maps FAO water guidance to this prototype's capacitive sensor percentage; calibrate locally."
+      },
+      "salinity": {
+        "max_irrigation_tds_ppm": null,
+        "qualitative_tolerance": null,
+        "source_id": null,
+        "notes": "A numeric irrigation-water TDS limit is unavailable from the selected sources; no soil-EC or water-EC conversion is assumed."
+      },
+      "sources": [
+        {
+          "source_id": "fao56-table11",
+          "title": "FAO Irrigation and Drainage Paper 56, Table 11: Lengths of crop development stages",
+          "url": "https://www.fao.org/4/X0490E/x0490e0b.htm",
+          "notes": "Tomato Mediterranean row: 30, 40, 45 and 30 days. FAO describes table values as general guides requiring local observation."
+        },
+        {
+          "source_id": "fao-crop-water-needs-table8",
+          "title": "FAO Crop Water Needs, Table 8: Crop factors by growth stage",
+          "url": "https://www.fao.org/4/S2022E/s2022e07.htm",
+          "notes": "Eggplant/tomato average Kc values: 0.45, 0.75, 1.15 and 0.80."
+        },
+        {
+          "source_id": "fao-water-shortage-sensitivity",
+          "title": "FAO: The influence of water shortages on yields",
+          "url": "https://www.fao.org/4/T7202E/t7202e05.htm",
+          "notes": "Tomato flowering is identified as especially sensitive; represented conservatively as high mid-season sensitivity only."
+        }
+      ],
+      "notes": [
+        "This is a demo reference profile, not a locally calibrated irrigation prescription.",
+        "Kc values vary with climate and wetting conditions."
+      ]
+    },
+    {
+      "crop_id": "chilli",
+      "display_name": "Chilli pepper",
+      "scientific_name": "Capsicum species",
+      "reference_context": "FAO sweet/fresh pepper data are used as a transparent demo proxy for chilli; validate the cultivar and local calendar before operational use.",
+      "stages": [
+        {
+          "stage_id": "initial",
+          "name": "Initial",
+          "start_day": 0,
+          "end_day": 29,
+          "water_stress_sensitivity": "high",
+          "crop_coefficient_kc": 0.35
+        },
+        {
+          "stage_id": "development",
+          "name": "Crop development",
+          "start_day": 30,
+          "end_day": 64,
+          "water_stress_sensitivity": "high",
+          "crop_coefficient_kc": 0.7
+        },
+        {
+          "stage_id": "mid_season",
+          "name": "Mid-season",
+          "start_day": 65,
+          "end_day": 104,
+          "water_stress_sensitivity": "high",
+          "crop_coefficient_kc": 1.05
+        },
+        {
+          "stage_id": "late_season",
+          "name": "Late season",
+          "start_day": 105,
+          "end_day": 124,
+          "water_stress_sensitivity": "high",
+          "crop_coefficient_kc": 0.9
+        }
+      ],
+      "moisture": {
+        "target_moisture_pct": null,
+        "critical_moisture_pct": null,
+        "source_id": null,
+        "notes": "No source-backed value maps FAO water guidance to this prototype's capacitive sensor percentage; calibrate locally."
+      },
+      "salinity": {
+        "max_irrigation_tds_ppm": null,
+        "qualitative_tolerance": "moderately sensitive; seedling stage is more sensitive",
+        "source_id": "fao-pepper-crop-information",
+        "notes": "The source gives qualitative soil-salinity sensitivity, not a numeric irrigation-water TDS limit; no conversion is fabricated."
+      },
+      "sources": [
+        {
+          "source_id": "fao56-table11",
+          "title": "FAO Irrigation and Drainage Paper 56, Table 11: Lengths of crop development stages",
+          "url": "https://www.fao.org/4/X0490E/x0490e0b.htm",
+          "notes": "Sweet pepper Europe/Mediterranean reference: the 30-day upper initial value, then 35, 40 and 20 days."
+        },
+        {
+          "source_id": "fao-crop-water-needs-table8",
+          "title": "FAO Crop Water Needs, Table 8: Crop factors by growth stage",
+          "url": "https://www.fao.org/4/S2022E/s2022e07.htm",
+          "notes": "Fresh pepper average Kc values: 0.35, 0.70, 1.05 and 0.90."
+        },
+        {
+          "source_id": "fao-pepper-crop-information",
+          "title": "FAO Crop Information: Pepper",
+          "url": "https://www.fao.org/land-water/databases-and-software/crop-information/pepper/en/",
+          "notes": "Pepper is sensitive to water shortage throughout and moderately sensitive to soil salinity, especially at seedling stage."
+        }
+      ],
+      "notes": [
+        "Sweet/fresh pepper evidence is a proxy for the demo chilli profile and is labelled as such.",
+        "This is not a locally calibrated irrigation prescription."
+      ]
+    },
+    {
+      "crop_id": "okra",
+      "display_name": "Okra",
+      "scientific_name": "Abelmoschus esculentus",
+      "reference_context": "A source-backed Kc reference is retained for configuration compatibility; stage day ranges are unavailable from the selected source and remain null.",
+      "stages": [
+        {
+          "stage_id": "initial",
+          "name": "Initial",
+          "start_day": null,
+          "end_day": null,
+          "water_stress_sensitivity": null,
+          "crop_coefficient_kc": 0.64
+        },
+        {
+          "stage_id": "development",
+          "name": "Crop development",
+          "start_day": null,
+          "end_day": null,
+          "water_stress_sensitivity": null,
+          "crop_coefficient_kc": 1.07
+        },
+        {
+          "stage_id": "mid_season",
+          "name": "Mid-season",
+          "start_day": null,
+          "end_day": null,
+          "water_stress_sensitivity": null,
+          "crop_coefficient_kc": 1.33
+        },
+        {
+          "stage_id": "late_season",
+          "name": "Late season",
+          "start_day": null,
+          "end_day": null,
+          "water_stress_sensitivity": null,
+          "crop_coefficient_kc": 0.86
+        }
+      ],
+      "moisture": {
+        "target_moisture_pct": null,
+        "critical_moisture_pct": null,
+        "source_id": null,
+        "notes": "No sensor-calibrated moisture thresholds are supplied by the selected source."
+      },
+      "salinity": {
+        "max_irrigation_tds_ppm": null,
+        "qualitative_tolerance": null,
+        "source_id": null,
+        "notes": "No supported salinity constraint was found in the selected source."
+      },
+      "sources": [
+        {
+          "source_id": "okra-kc-parbhani-2023",
+          "title": "Determination of Crop Coefficient of Okra Crop Using Lysimeter for Semi-arid Climatic Condition of Parbhani, Maharashtra",
+          "url": "https://agris.fao.org/search/en/providers/124598/records/6878e9200868163a2f75277d",
+          "notes": "Published stage-mean Kc values are included; the indexed abstract does not provide stage day boundaries."
+        }
+      ],
+      "notes": [
+        "Automatic stage estimation is unavailable until a locally valid stage calendar is configured."
+      ]
+    }
+  ]
 }

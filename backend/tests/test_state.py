@@ -96,6 +96,8 @@ def test_hardware_mode_starts_with_null_real_sensor_state() -> None:
     assert state.water.fresh.tds_ppm is None
     assert state.power.solar_power_w is None
     assert state.weather.status == "OFFLINE"
+    assert state.weather.provider_status == "NOT_FETCHED"
+    assert state.weather.stale is True
 
     with pytest.raises(SimulationModeDisabledError):
         store.load_scenario("zone_a_critical")
