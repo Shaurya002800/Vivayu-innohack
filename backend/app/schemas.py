@@ -29,6 +29,45 @@ CropContextStatus = Literal[
 ]
 CropStageSource = Literal["AUTO", "MANUAL"]
 WaterStressSensitivity = Literal["low", "moderate", "high"]
+WaterSourceId = Literal["fresh", "marginal"]
+WaterQualityStatus = Literal["SIMULATED", "MEASURED", "STALE", "UNKNOWN", "INVALID"]
+WaterQualityStrategy = Literal[
+    "MARGINAL_ONLY",
+    "CONTROLLED_BLEND",
+    "FRESH_ONLY",
+    "NOT_FEASIBLE",
+    "CONFIG_REQUIRED",
+    "SOURCE_QUALITY_UNKNOWN",
+    "NO_IRRIGATION_REQUEST",
+]
+WaterQualityReasonCode = Literal[
+    "IRRIGATION_REQUEST_UNAVAILABLE",
+    "NO_IRRIGATION_REQUEST",
+    "CROP_TDS_LIMIT_MISSING",
+    "SAFETY_MARGIN_MISSING",
+    "SAFETY_TARGET_INVALID",
+    "FRESH_TDS_UNKNOWN",
+    "MARGINAL_TDS_UNKNOWN",
+    "SOURCE_QUALITY_STALE",
+    "SOURCE_ORDER_ANOMALY",
+    "EQUAL_SOURCE_TDS",
+    "MARGINAL_WITHIN_TARGET",
+    "MARGINAL_EXCEEDS_TARGET",
+    "CONTROLLED_BLEND_SAFE",
+    "MAXIMIZED_MARGINAL_FRACTION",
+    "FRESH_ONLY_SAFE",
+    "NO_SOURCE_MEETS_TARGET",
+    "SOURCE_VOLUME_SUFFICIENT",
+    "SOURCE_VOLUME_INSUFFICIENT",
+    "SOURCE_VOLUME_UNKNOWN",
+]
+WaterQualityWarningCode = Literal[
+    "PREDICTION_REQUIRES_PHYSICAL_VERIFICATION",
+    "TDS_IS_QUALITY_PROXY",
+    "SOURCE_LABEL_ORDER_ANOMALY",
+    "SOURCE_AVAILABILITY_UNKNOWN",
+    "SOURCE_VOLUME_INSUFFICIENT",
+]
 IrrigationNeedStatus = Literal[
     "NOT_NEEDED",
     "NEEDED",
@@ -100,6 +139,13 @@ class PrototypeIrrigationParameters(CanonicalModel):
         return self
 
 
+class PrototypeWaterQualityParameters(CanonicalModel):
+    """Per-zone incoming-water constraint; never supplied implicitly."""
+
+    max_irrigation_tds_ppm: PositiveFloat | None = None
+    constraint_basis: Literal["prototype_or_sourced"] = "prototype_or_sourced"
+
+
 class ZoneConfig(CanonicalModel):
     zone_id: ZoneId
     name: Annotated[str, Field(min_length=1)]
@@ -112,6 +158,9 @@ class ZoneConfig(CanonicalModel):
     enabled: bool = True
     irrigation_parameters: PrototypeIrrigationParameters = Field(
         default_factory=PrototypeIrrigationParameters
+    )
+    water_quality_parameters: PrototypeWaterQualityParameters = Field(
+        default_factory=PrototypeWaterQualityParameters
     )
 
     @model_validator(mode="after")
@@ -300,10 +349,42 @@ class ZoneState(CanonicalModel):
 
 
 class WaterSourceState(CanonicalModel):
+    source_id: WaterSourceId
+    display_name: Annotated[str, Field(min_length=1)]
     tds_ppm: NonNegativeFloat | None = None
     temperature_c: float | None = None
     available_l: NonNegativeFloat | None = None
     last_measured_at: AwareDatetime | None = None
+    measurement_age_s: NonNegativeFloat | None = None
+    quality_status: WaterQualityStatus = "UNKNOWN"
+
+    @model_validator(mode="after")
+    def validate_quality_state(self) -> Self:
+        if self.tds_ppm is None:
+            if self.last_measured_at is not None or self.measurement_age_s is not None:
+                raise ValueError("missing source TDS cannot have measurement timing")
+            if self.quality_status not in {"UNKNOWN", "INVALID"}:
+                raise ValueError("missing source TDS must be UNKNOWN or INVALID")
+        elif self.last_measured_at is None:
+            raise ValueError("source TDS requires last_measured_at")
+        if self.measurement_age_s is not None and self.last_measured_at is None:
+            raise ValueError("source measurement age requires last_measured_at")
+        return self
+
+
+class WaterSourceUpdateRequest(CanonicalModel):
+    tds_ppm: NonNegativeFloat | None = None
+    temperature_c: float | None = None
+    available_l: NonNegativeFloat | None = None
+    last_measured_at: AwareDatetime | None = None
+
+    @model_validator(mode="after")
+    def validate_measurement_timestamp(self) -> Self:
+        if self.tds_ppm is None and self.last_measured_at is not None:
+            raise ValueError("last_measured_at requires a TDS reading")
+        if self.tds_ppm is not None and self.last_measured_at is None:
+            raise ValueError("TDS reading requires last_measured_at")
+        return self
 
 
 class MixWaterState(CanonicalModel):
@@ -317,6 +398,98 @@ class WaterState(CanonicalModel):
     fresh: WaterSourceState
     marginal: WaterSourceState
     mix: MixWaterState
+
+    @model_validator(mode="after")
+    def validate_source_identities(self) -> Self:
+        if self.fresh.source_id != "fresh" or self.marginal.source_id != "marginal":
+            raise ValueError("water source map does not match source identities")
+        return self
+
+
+class WaterQualityPolicy(CanonicalModel):
+    tds_safety_margin_ppm: PositiveFloat | None = None
+    source_stale_after_s: PositiveFloat
+    volume_rounding_decimals: Annotated[int, Field(ge=0, le=9)]
+    volume_tolerance_ml: PositiveFloat
+    predicted_tds_tolerance_ppm: PositiveFloat
+
+
+class WaterQualityResult(CanonicalModel):
+    zone_id: ZoneId
+    strategy: WaterQualityStrategy
+    requested_water_ml: NonNegativeFloat | None = None
+    fresh_ml: NonNegativeFloat | None = None
+    marginal_ml: NonNegativeFloat | None = None
+    fresh_fraction: UnitInterval | None = None
+    marginal_fraction: UnitInterval | None = None
+    fresh_tds_ppm: NonNegativeFloat | None = None
+    marginal_tds_ppm: NonNegativeFloat | None = None
+    configured_max_tds_ppm: PositiveFloat | None = None
+    safety_margin_ppm: PositiveFloat | None = None
+    safety_target_tds_ppm: PositiveFloat | None = None
+    predicted_tds_ppm: NonNegativeFloat | None = None
+    measured_tds_ppm: None = None
+    safe: bool
+    physical_verification_required: bool
+    fresh_available_ml: NonNegativeFloat | None = None
+    marginal_available_ml: NonNegativeFloat | None = None
+    source_volume_sufficient: bool | None = None
+    currently_satisfiable: bool
+    policy: WaterQualityPolicy
+    reason_codes: tuple[WaterQualityReasonCode, ...]
+    reasons: tuple[Annotated[str, Field(min_length=1)], ...]
+    warning_codes: tuple[WaterQualityWarningCode, ...] = ()
+    warnings: tuple[Annotated[str, Field(min_length=1)], ...] = ()
+
+    @model_validator(mode="after")
+    def validate_result_consistency(self) -> Self:
+        safe_strategies = {"MARGINAL_ONLY", "CONTROLLED_BLEND", "FRESH_ONLY"}
+        if self.safe != (self.strategy in safe_strategies):
+            raise ValueError("water-quality safe flag does not match strategy")
+        if self.physical_verification_required != self.safe:
+            raise ValueError("predicted-safe strategy requires future physical verification")
+        if self.measured_tds_ppm is not None:
+            raise ValueError("Milestone 5 result cannot contain measured post-mix TDS")
+        if not self.reason_codes or len(self.reason_codes) != len(self.reasons):
+            raise ValueError("water-quality result requires aligned explanations")
+        if len(self.warning_codes) != len(self.warnings):
+            raise ValueError("water-quality warning codes and messages must align")
+        if not self.safe:
+            if self.currently_satisfiable:
+                raise ValueError("unsafe strategy cannot be currently satisfiable")
+            return self
+
+        required = (
+            self.requested_water_ml,
+            self.fresh_ml,
+            self.marginal_ml,
+            self.fresh_fraction,
+            self.marginal_fraction,
+            self.safety_target_tds_ppm,
+            self.predicted_tds_ppm,
+        )
+        if any(value is None for value in required):
+            raise ValueError("predicted-safe strategy requires volumes, fractions and TDS")
+        assert self.requested_water_ml is not None
+        assert self.fresh_ml is not None
+        assert self.marginal_ml is not None
+        assert self.fresh_fraction is not None
+        assert self.marginal_fraction is not None
+        assert self.safety_target_tds_ppm is not None
+        assert self.predicted_tds_ppm is not None
+        if abs(self.fresh_ml + self.marginal_ml - self.requested_water_ml) > (
+            self.policy.volume_tolerance_ml
+        ):
+            raise ValueError("source volumes do not conserve requested water")
+        if abs(self.fresh_fraction + self.marginal_fraction - 1.0) > 1e-9:
+            raise ValueError("source fractions must sum to one")
+        if self.predicted_tds_ppm > (
+            self.safety_target_tds_ppm + self.policy.predicted_tds_tolerance_ppm
+        ):
+            raise ValueError("predicted TDS exceeds safety target tolerance")
+        if self.currently_satisfiable != (self.source_volume_sufficient is True):
+            raise ValueError("current satisfiability must reflect source volume sufficiency")
+        return self
 
 
 class WeatherState(CanonicalModel):

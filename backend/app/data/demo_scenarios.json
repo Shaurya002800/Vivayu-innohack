@@ -94,16 +94,24 @@
     },
     "water": {
       "fresh": {
+        "source_id": "fresh",
+        "display_name": "Freshwater source",
         "tds_ppm": 220.0,
         "temperature_c": 25.5,
         "available_l": 1.0,
-        "last_measured_at": "2026-08-20T16:15:00+05:30"
+        "last_measured_at": "2026-08-20T16:15:00+05:30",
+        "measurement_age_s": null,
+        "quality_status": "SIMULATED"
       },
       "marginal": {
+        "source_id": "marginal",
+        "display_name": "Marginal-quality water source",
         "tds_ppm": 820.0,
         "temperature_c": 25.7,
         "available_l": 2.5,
-        "last_measured_at": "2026-08-20T16:16:00+05:30"
+        "last_measured_at": "2026-08-20T16:16:00+05:30",
+        "measurement_age_s": null,
+        "quality_status": "SIMULATED"
       },
       "mix": {
         "tds_ppm": null,

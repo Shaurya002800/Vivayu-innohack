@@ -10,6 +10,7 @@ from app.api.simulation import router as simulation_router
 from app.api.state import router as state_router
 from app.api.zones import router as zones_router
 from app.api.weather import router as weather_router
+from app.api.water import router as water_router
 from app.config import settings
 
 
@@ -27,4 +28,5 @@ app.include_router(zones_router, prefix=settings.api_prefix)
 app.include_router(irrigation_router, prefix=settings.api_prefix)
 app.include_router(crops_router, prefix=settings.api_prefix)
 app.include_router(weather_router, prefix=settings.api_prefix)
+app.include_router(water_router, prefix=settings.api_prefix)
 app.include_router(simulation_router, prefix=settings.api_prefix)

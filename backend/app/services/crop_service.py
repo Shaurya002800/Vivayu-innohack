@@ -62,6 +62,9 @@ class CropService:
                 status="CROP_UNCONFIGURED",
                 target_moisture_pct=config.irrigation_parameters.target_moisture_pct,
                 critical_moisture_pct=config.irrigation_parameters.critical_moisture_pct,
+                max_irrigation_tds_ppm=(
+                    config.water_quality_parameters.max_irrigation_tds_ppm
+                ),
                 warnings=("crop_id is not configured",),
             )
 
@@ -182,6 +185,11 @@ class CropService:
         critical_moisture_pct = config.irrigation_parameters.critical_moisture_pct
         if critical_moisture_pct is None:
             critical_moisture_pct = profile.moisture.critical_moisture_pct
+        max_irrigation_tds_ppm = (
+            config.water_quality_parameters.max_irrigation_tds_ppm
+        )
+        if max_irrigation_tds_ppm is None:
+            max_irrigation_tds_ppm = profile.salinity.max_irrigation_tds_ppm
         return CropContext.model_validate(
             {
                 "zone_id": config.zone_id,
@@ -196,7 +204,7 @@ class CropService:
                 "water_stress_sensitivity": stage.water_stress_sensitivity if stage else None,
                 "target_moisture_pct": target_moisture_pct,
                 "critical_moisture_pct": critical_moisture_pct,
-                "max_irrigation_tds_ppm": profile.salinity.max_irrigation_tds_ppm,
+                "max_irrigation_tds_ppm": max_irrigation_tds_ppm,
                 "source_ids": source_ids,
                 "warnings": warnings,
             }

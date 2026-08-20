@@ -15,10 +15,13 @@ from app.schemas import (
     MixWaterState,
     PowerState,
     PrototypeIrrigationParameters,
+    PrototypeWaterQualityParameters,
     SimulationScenarioSummary,
     SystemState,
     VivayuHealthState,
     WaterSourceState,
+    WaterSourceId,
+    WaterSourceUpdateRequest,
     WaterState,
     WeatherState,
     ZoneConfig,
@@ -174,8 +177,14 @@ class ApplicationStateStore:
             updated_at=_utc_now(),
             zones=zones,
             water=WaterState(
-                fresh=WaterSourceState(),
-                marginal=WaterSourceState(),
+                fresh=WaterSourceState(
+                    source_id="fresh",
+                    display_name="Freshwater source",
+                ),
+                marginal=WaterSourceState(
+                    source_id="marginal",
+                    display_name="Marginal-quality water source",
+                ),
                 mix=MixWaterState(),
             ),
             weather=WeatherState(
@@ -219,7 +228,30 @@ class ApplicationStateStore:
                 },
                 deep=True,
             )
-        return state.model_copy(update={"zones": zones, "weather": weather}, deep=True)
+        water = state.water
+        if state.data_mode == "simulation":
+            water = WaterState(
+                fresh=self._simulation_source_snapshot(water.fresh),
+                marginal=self._simulation_source_snapshot(water.marginal),
+                mix=water.mix,
+            )
+        return state.model_copy(
+            update={"zones": zones, "weather": weather, "water": water},
+            deep=True,
+        )
+
+    @staticmethod
+    def _simulation_source_snapshot(source: WaterSourceState) -> WaterSourceState:
+        age_s = None
+        if source.last_measured_at is not None:
+            age_s = max(0.0, (_utc_now() - source.last_measured_at).total_seconds())
+        return source.model_copy(
+            update={
+                "measurement_age_s": age_s,
+                "quality_status": "SIMULATED" if source.tds_ppm is not None else "UNKNOWN",
+            },
+            deep=True,
+        )
 
     @staticmethod
     def _require_zone(zone_id: str) -> ZoneId:
@@ -229,7 +261,37 @@ class ApplicationStateStore:
 
     def get_state(self) -> SystemState:
         with self._lock:
+            return self._state_snapshot()
+
+    def _state_snapshot(self) -> SystemState:
+        """Refresh hardware measurement ages without mutating canonical state."""
+
+        if self._state.data_mode != "hardware":
             return self._state.model_copy(deep=True)
+        source_updates: dict[str, WaterSourceState] = {}
+        now = _utc_now()
+        for source_id in ("fresh", "marginal"):
+            source = getattr(self._state.water, source_id)
+            if source.last_measured_at is None:
+                source_updates[source_id] = source.model_copy(deep=True)
+                continue
+            age_s = max(0.0, (now - source.last_measured_at).total_seconds())
+            quality_status = source.quality_status
+            if quality_status in {"MEASURED", "STALE"}:
+                quality_status = (
+                    "STALE"
+                    if age_s > settings.tds_source_stale_minutes * 60
+                    else "MEASURED"
+                )
+            source_updates[source_id] = source.model_copy(
+                update={
+                    "measurement_age_s": age_s,
+                    "quality_status": quality_status,
+                },
+                deep=True,
+            )
+        water = self._state.water.model_copy(update=source_updates, deep=True)
+        return self._state.model_copy(update={"water": water}, deep=True)
 
     def get_zone(self, zone_id: str) -> ZoneState:
         canonical_zone_id = self._require_zone(zone_id)
@@ -321,6 +383,82 @@ class ApplicationStateStore:
                 }
             )
             return self.update_zone_config(canonical_zone_id, config)
+
+    def get_water_quality_parameters(
+        self,
+        zone_id: str,
+    ) -> PrototypeWaterQualityParameters:
+        canonical_zone_id = self._require_zone(zone_id)
+        with self._lock:
+            return self._state.zones[
+                canonical_zone_id
+            ].config.water_quality_parameters.model_copy(deep=True)
+
+    def update_water_quality_parameters(
+        self,
+        zone_id: str,
+        parameters: PrototypeWaterQualityParameters,
+    ) -> ZoneState:
+        canonical_zone_id = self._require_zone(zone_id)
+        with self._lock:
+            current = self._state.zones[canonical_zone_id]
+            config = ZoneConfig.model_validate(
+                {
+                    **current.config.model_dump(),
+                    "water_quality_parameters": parameters,
+                }
+            )
+            return self.update_zone_config(canonical_zone_id, config)
+
+    def get_water(self) -> WaterState:
+        with self._lock:
+            return self._state_snapshot().water
+
+    def update_water_source(
+        self,
+        source_id: WaterSourceId,
+        update: WaterSourceUpdateRequest,
+    ) -> WaterSourceState:
+        with self._lock:
+            measured_at = update.last_measured_at
+            age_s = None
+            if measured_at is not None:
+                now = _utc_now()
+                if measured_at > now:
+                    raise ValueError("last_measured_at cannot be in the future")
+                age_s = (now - measured_at).total_seconds()
+            if update.tds_ppm is None:
+                quality_status = "UNKNOWN"
+            elif self._state.data_mode == "simulation":
+                quality_status = "SIMULATED"
+            elif age_s is not None and age_s > settings.tds_source_stale_minutes * 60:
+                quality_status = "STALE"
+            else:
+                quality_status = "MEASURED"
+
+            current = getattr(self._state.water, source_id)
+            source = WaterSourceState(
+                source_id=source_id,
+                display_name=current.display_name,
+                tds_ppm=update.tds_ppm,
+                temperature_c=update.temperature_c,
+                available_l=update.available_l,
+                last_measured_at=measured_at,
+                measurement_age_s=age_s,
+                quality_status=quality_status,
+            )
+            water = self._state.water.model_copy(update={source_id: source}, deep=True)
+            self._state = SystemState(
+                schema_version=self._state.schema_version,
+                data_mode=self._state.data_mode,
+                active_scenario_id=self._state.active_scenario_id,
+                updated_at=_utc_now(),
+                zones=self._state.zones,
+                water=water,
+                weather=self._state.weather,
+                power=self._state.power,
+            )
+            return source.model_copy(deep=True)
 
     def update_zone_telemetry(self, zone_id: str, telemetry: ZoneTelemetry) -> ZoneState:
         canonical_zone_id = self._require_zone(zone_id)

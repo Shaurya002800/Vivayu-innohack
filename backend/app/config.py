@@ -56,6 +56,13 @@ class Settings:
         os.getenv("IRRIGATION_MODERATE_STAGE_SENSITIVITY_BOOST", "0.05")
     )
     irrigation_high_et0_boost: float = float(os.getenv("IRRIGATION_HIGH_ET0_BOOST", "0.05"))
+    tds_safety_margin_ppm: float | None = _optional_float("TDS_SAFETY_MARGIN_PPM", "50")
+    tds_source_stale_minutes: float = float(os.getenv("TDS_SOURCE_STALE_MINUTES", "240"))
+    tds_volume_rounding_decimals: int = int(os.getenv("TDS_VOLUME_ROUNDING_DECIMALS", "6"))
+    tds_volume_tolerance_ml: float = float(os.getenv("TDS_VOLUME_TOLERANCE_ML", "0.000001"))
+    tds_prediction_tolerance_ppm: float = float(
+        os.getenv("TDS_PREDICTION_TOLERANCE_PPM", "0.000001")
+    )
 
 
 settings = Settings()
