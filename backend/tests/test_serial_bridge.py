@@ -342,6 +342,7 @@ def test_reconnect_recovers_after_startup_failure() -> None:
         "port": "test-port",
         "baudrate": 115_200,
         "timeout": 0.01,
+        "write_timeout": 1.5,
     }
     assert bridge.get_connection_state().status == "CONNECTED"
     assert store.get_zone("A").online is True

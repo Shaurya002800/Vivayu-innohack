@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   activateSimulationScenario,
+  emergencyStop,
   fetchDashboardSnapshot,
   fetchSimulationScenarios,
   resetSimulation,
@@ -65,7 +66,7 @@ export function useDashboardData() {
         await action();
         await refresh();
       } catch (error: unknown) {
-        setActionError(error instanceof Error ? error.message : "Simulation action failed");
+        setActionError(error instanceof Error ? error.message : "Action failed");
       } finally {
         setActiveAction(null);
       }
@@ -84,5 +85,8 @@ export function useDashboardData() {
     activateScenario: (scenarioId: string) =>
       runAction(scenarioId, () => activateSimulationScenario(scenarioId)),
     resetScenario: () => runAction("reset", resetSimulation),
+    emergencyStop: () => runAction("emergency-stop", async () => {
+      await emergencyStop();
+    }),
   };
 }

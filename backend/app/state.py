@@ -11,6 +11,7 @@ from typing import Any, Callable, cast
 
 from app.config import settings
 from app.schemas import (
+    ControllerState,
     DataMode,
     MixWaterState,
     PowerState,
@@ -223,6 +224,10 @@ class ApplicationStateStore:
                 status="DISCONNECTED",
                 enabled=True,
                 baud_rate=settings.serial_baud,
+            ),
+            controller=ControllerState(
+                status="DISCONNECTED",
+                communication_fault="controller status has not been received",
             ),
         ))
 
@@ -530,6 +535,7 @@ class ApplicationStateStore:
                 weather=self._state.weather,
                 power=self._state.power,
                 telemetry_connection=self._state.telemetry_connection,
+                controller=self._state.controller,
             )
             return source.model_copy(deep=True)
 
@@ -579,6 +585,33 @@ class ApplicationStateStore:
     def get_telemetry_connection(self) -> SerialConnectionState:
         with self._lock:
             return self._state.telemetry_connection.model_copy(deep=True)
+
+    def update_controller_state(self, controller: ControllerState) -> ControllerState:
+        """Publish controller safety truth without mutating telemetry or water."""
+
+        with self._lock:
+            if (
+                self._state.data_mode == "simulation"
+                and controller.status != "SIMULATED"
+            ):
+                raise ValueError("simulation state cannot publish hardware controller state")
+            if (
+                self._state.data_mode == "hardware"
+                and controller.status == "SIMULATED"
+            ):
+                raise ValueError("hardware state cannot publish simulated controller state")
+            self._state = self._state.model_copy(
+                update={
+                    "controller": controller,
+                    "updated_at": self._now_provider(),
+                },
+                deep=True,
+            )
+            return controller.model_copy(deep=True)
+
+    def get_controller_state(self) -> ControllerState:
+        with self._lock:
+            return self._state.controller.model_copy(deep=True)
 
     def get_vivayu_health(self, zone_id: str) -> VivayuHealthState:
         canonical_zone_id = self._require_zone(zone_id)
@@ -643,6 +676,7 @@ class ApplicationStateStore:
             weather=self._state.weather,
             power=self._state.power,
             telemetry_connection=self._state.telemetry_connection,
+            controller=self._state.controller,
         )
 
 

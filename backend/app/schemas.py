@@ -18,6 +18,38 @@ SerialConnectionStatus = Literal[
     "DISCONNECTED",
     "ERROR",
 ]
+CommandAction = Literal[
+    "MIX_WATER",
+    "ADD_FRESH_WATER",
+    "IRRIGATE_ZONE",
+    "STOP_ALL",
+]
+CommandLifecycleStatus = Literal[
+    "CREATED",
+    "SENT",
+    "ACKNOWLEDGED",
+    "REJECTED",
+    "TIMED_OUT",
+    "FAILED",
+]
+AcknowledgementStatus = Literal["accepted", "duplicate", "rejected", "busy"]
+CommandConfirmationSource = Literal["ACK", "CONTROLLER_STATUS"]
+ControllerReportedState = Literal[
+    "IDLE",
+    "MIXING",
+    "IRRIGATING",
+    "EMERGENCY_STOP",
+    "FAULT",
+]
+ControllerSafetyStatus = Literal[
+    "SIMULATED",
+    "DISCONNECTED",
+    "UNKNOWN",
+    "IDLE",
+    "ACTIVE",
+    "EMERGENCY_STOP",
+    "FAULT",
+]
 GrowthStageMode = Literal["AUTO", "MANUAL"]
 WeatherStatus = Literal["SIMULATED", "LIVE", "CACHED", "OFFLINE"]
 WeatherProviderStatus = Literal[
@@ -168,6 +200,14 @@ NonNegativeInt = Annotated[int, Field(ge=0)]
 PositiveFloat = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 UnitInterval = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
 PositiveUnitInterval = Annotated[float, Field(gt=0, le=1, allow_inf_nan=False)]
+CommandId = Annotated[
+    str,
+    Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    ),
+]
 
 
 class CanonicalModel(BaseModel):
@@ -301,6 +341,72 @@ class FieldTelemetryPacket(CanonicalModel):
                 "received_at": received_at,
             }
         )
+
+
+class ControllerCommandBase(CanonicalModel):
+    """Shared versioned envelope for backend-to-controller commands."""
+
+    schema_version: SchemaVersion = "1.0"
+    type: Literal["command"] = "command"
+    command_id: CommandId
+
+
+class MixWaterCommand(ControllerCommandBase):
+    action: Literal["MIX_WATER"] = "MIX_WATER"
+    fresh_ml: PositiveFloat
+    marginal_ml: PositiveFloat
+    max_runtime_s: Annotated[float, Field(gt=0, le=3_600, allow_inf_nan=False)]
+
+
+class AddFreshWaterCommand(ControllerCommandBase):
+    action: Literal["ADD_FRESH_WATER"] = "ADD_FRESH_WATER"
+    fresh_ml: PositiveFloat
+    max_runtime_s: Annotated[float, Field(gt=0, le=3_600, allow_inf_nan=False)]
+
+
+class IrrigateZoneCommand(ControllerCommandBase):
+    action: Literal["IRRIGATE_ZONE"] = "IRRIGATE_ZONE"
+    zone_id: ZoneId
+    volume_ml: PositiveFloat
+    max_runtime_s: Annotated[float, Field(gt=0, le=3_600, allow_inf_nan=False)]
+
+
+class StopAllCommand(ControllerCommandBase):
+    action: Literal["STOP_ALL"] = "STOP_ALL"
+
+
+ControllerCommand = Annotated[
+    MixWaterCommand
+    | AddFreshWaterCommand
+    | IrrigateZoneCommand
+    | StopAllCommand,
+    Field(discriminator="action"),
+]
+
+
+class ControllerAckPacket(CanonicalModel):
+    schema_version: SchemaVersion = "1.0"
+    type: Literal["ack"] = "ack"
+    command_id: CommandId
+    status: AcknowledgementStatus
+
+
+class ControllerStatusPacket(CanonicalModel):
+    schema_version: SchemaVersion = "1.0"
+    type: Literal["controller_status"] = "controller_status"
+    controller_id: Annotated[str, Field(min_length=1, max_length=128)]
+    state: ControllerReportedState
+    emergency_stop: bool
+    last_command_id: CommandId | None = None
+    timestamp_ms: NonNegativeInt | None = None
+
+    @model_validator(mode="after")
+    def validate_emergency_stop_state(self) -> Self:
+        if (self.state == "EMERGENCY_STOP") != self.emergency_stop:
+            raise ValueError(
+                "controller emergency_stop flag must match EMERGENCY_STOP state"
+            )
+        return self
 
 
 class SourceMetadata(CanonicalModel):
@@ -977,6 +1083,100 @@ class SerialConnectionState(CanonicalModel):
         return self
 
 
+class CommandRecord(CanonicalModel):
+    command: ControllerCommand
+    status: CommandLifecycleStatus
+    created_at: AwareDatetime
+    sent_at: AwareDatetime | None = None
+    acknowledged_at: AwareDatetime | None = None
+    updated_at: AwareDatetime
+    retry_count: NonNegativeInt = 0
+    ack_status: AcknowledgementStatus | None = None
+    confirmation_source: CommandConfirmationSource | None = None
+    error: str | None = None
+
+    @model_validator(mode="after")
+    def validate_lifecycle_timestamps(self) -> Self:
+        if self.status == "CREATED" and self.sent_at is not None:
+            raise ValueError("created command cannot already have a sent timestamp")
+        if self.status in {"SENT", "ACKNOWLEDGED", "REJECTED", "TIMED_OUT"}:
+            if self.sent_at is None:
+                raise ValueError(f"{self.status} command requires a sent timestamp")
+        if self.status in {"ACKNOWLEDGED", "REJECTED"}:
+            if self.acknowledged_at is None or self.confirmation_source is None:
+                raise ValueError("ACK-result command requires confirmation metadata")
+            if self.status == "ACKNOWLEDGED":
+                if self.confirmation_source == "ACK" and self.ack_status not in {
+                    "accepted",
+                    "duplicate",
+                }:
+                    raise ValueError("ACK-confirmed command requires a success ACK status")
+            if (
+                self.confirmation_source == "CONTROLLER_STATUS"
+                and self.command.action != "STOP_ALL"
+            ):
+                raise ValueError("only STOP_ALL may be confirmed by controller status")
+        elif self.acknowledged_at is not None or self.confirmation_source is not None:
+            raise ValueError("non-acknowledged command cannot contain confirmation metadata")
+        if self.status == "REJECTED":
+            if self.confirmation_source != "ACK" or self.ack_status not in {
+                "rejected",
+                "busy",
+            }:
+                raise ValueError("rejected command requires rejected or busy ACK status")
+        return self
+
+
+class ControllerState(CanonicalModel):
+    status: ControllerSafetyStatus = "SIMULATED"
+    connected: bool = False
+    ready: bool = False
+    controller_id: str | None = None
+    reported_state: ControllerReportedState | None = None
+    emergency_stop: bool = False
+    stop_required: bool = False
+    execution_uncertain: bool = False
+    last_status_at: AwareDatetime | None = None
+    last_device_timestamp_ms: NonNegativeInt | None = None
+    last_command_id: CommandId | None = None
+    last_ack_command_id: CommandId | None = None
+    last_ack_status: AcknowledgementStatus | None = None
+    last_ack_at: AwareDatetime | None = None
+    communication_fault: str | None = None
+    unknown_ack_count: NonNegativeInt = 0
+    duplicate_ack_count: NonNegativeInt = 0
+    command_history: tuple[CommandRecord, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_safety_state(self) -> Self:
+        if self.ready != (self.status == "IDLE"):
+            raise ValueError("controller is ready only in canonical IDLE state")
+        if self.ready and (
+            not self.connected or self.emergency_stop or self.execution_uncertain
+        ):
+            raise ValueError("ready controller must be connected and explicitly safe")
+        if self.status == "SIMULATED" and (
+            self.connected
+            or self.ready
+            or self.controller_id is not None
+            or self.reported_state is not None
+        ):
+            raise ValueError("simulated controller state cannot claim hardware status")
+        if self.status == "DISCONNECTED" and self.connected:
+            raise ValueError("disconnected controller cannot be connected")
+        if self.status in {"IDLE", "ACTIVE", "EMERGENCY_STOP", "FAULT"}:
+            if not self.connected or self.reported_state is None:
+                raise ValueError("reported controller states require a live status packet")
+        if self.status == "EMERGENCY_STOP" and not self.emergency_stop:
+            raise ValueError("emergency-stop state requires the stop flag")
+        if self.last_ack_command_id is None:
+            if self.last_ack_status is not None or self.last_ack_at is not None:
+                raise ValueError("ACK metadata requires a command ID")
+        elif self.last_ack_status is None or self.last_ack_at is None:
+            raise ValueError("ACK command ID requires status and receive time")
+        return self
+
+
 class PowerState(CanonicalModel):
     connected: bool = False
     solar_power_w: NonNegativeFloat | None = None
@@ -1011,6 +1211,7 @@ class SystemState(CanonicalModel):
     telemetry_connection: SerialConnectionState = Field(
         default_factory=SerialConnectionState
     )
+    controller: ControllerState = Field(default_factory=ControllerState)
 
     @model_validator(mode="after")
     def validate_complete_zone_set(self) -> Self:
@@ -1021,6 +1222,10 @@ class SystemState(CanonicalModel):
                 raise ValueError(f"zone map key {zone_id} does not match nested zone_id")
         if self.data_mode == "hardware" and self.active_scenario_id is not None:
             raise ValueError("hardware state cannot have an active simulation scenario")
+        if self.data_mode == "simulation" and self.controller.status != "SIMULATED":
+            raise ValueError("simulation state requires simulated controller status")
+        if self.data_mode == "hardware" and self.controller.status == "SIMULATED":
+            raise ValueError("hardware state cannot expose simulated controller status")
         return self
 
 

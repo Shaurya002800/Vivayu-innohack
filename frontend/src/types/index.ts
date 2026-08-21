@@ -191,6 +191,80 @@ export interface SerialConnectionState {
   packets_rejected: number;
 }
 
+export type CommandAction =
+  | "MIX_WATER"
+  | "ADD_FRESH_WATER"
+  | "IRRIGATE_ZONE"
+  | "STOP_ALL";
+
+export type ControllerCommand =
+  | {
+      schema_version: "1.0";
+      type: "command";
+      command_id: string;
+      action: "MIX_WATER";
+      fresh_ml: number;
+      marginal_ml: number;
+      max_runtime_s: number;
+    }
+  | {
+      schema_version: "1.0";
+      type: "command";
+      command_id: string;
+      action: "ADD_FRESH_WATER";
+      fresh_ml: number;
+      max_runtime_s: number;
+    }
+  | {
+      schema_version: "1.0";
+      type: "command";
+      command_id: string;
+      action: "IRRIGATE_ZONE";
+      zone_id: ZoneId;
+      volume_ml: number;
+      max_runtime_s: number;
+    }
+  | {
+      schema_version: "1.0";
+      type: "command";
+      command_id: string;
+      action: "STOP_ALL";
+    };
+
+export interface CommandRecord {
+  command: ControllerCommand;
+  status: "CREATED" | "SENT" | "ACKNOWLEDGED" | "REJECTED" | "TIMED_OUT" | "FAILED";
+  created_at: string;
+  sent_at: string | null;
+  acknowledged_at: string | null;
+  updated_at: string;
+  retry_count: number;
+  ack_status: "accepted" | "duplicate" | "rejected" | "busy" | null;
+  confirmation_source: "ACK" | "CONTROLLER_STATUS" | null;
+  error: string | null;
+}
+
+export interface ControllerState {
+  status: "SIMULATED" | "DISCONNECTED" | "UNKNOWN" | "IDLE" | "ACTIVE" | "EMERGENCY_STOP" | "FAULT";
+  connected: boolean;
+  ready: boolean;
+  controller_id: string | null;
+  reported_state: "IDLE" | "MIXING" | "IRRIGATING" | "EMERGENCY_STOP" | "FAULT" | null;
+  emergency_stop: boolean;
+  stop_required: boolean;
+  execution_uncertain: boolean;
+  last_status_at: string | null;
+  last_device_timestamp_ms: number | null;
+  last_command_id: string | null;
+  last_ack_command_id: string | null;
+  last_ack_status: "accepted" | "duplicate" | "rejected" | "busy" | null;
+  last_ack_at: string | null;
+  communication_fault: string | null;
+  unknown_ack_count: number;
+  duplicate_ack_count: number;
+  command_history: CommandRecord[];
+}
+
 export interface SystemState {
   schema_version: "1.0";
   data_mode: DataMode;
@@ -205,6 +279,7 @@ export interface SystemState {
   weather: WeatherState;
   power: PowerState;
   telemetry_connection: SerialConnectionState;
+  controller: ControllerState;
 }
 
 export interface IrrigationNeedPolicy {

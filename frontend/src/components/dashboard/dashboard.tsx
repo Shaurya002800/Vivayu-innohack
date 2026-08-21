@@ -5,6 +5,7 @@ import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { AllocationOverview } from "./allocation-overview";
 import { DashboardHeader } from "./dashboard-header";
 import { ExplanationPanel } from "./explanation-panel";
+import { EmergencyStopControl } from "./emergency-stop-control";
 import { SimulationControls } from "./simulation-controls";
 import { SystemSummary } from "./system-summary";
 import { ZoneCard } from "./zone-card";
@@ -85,6 +86,16 @@ export function Dashboard() {
 
       <SystemSummary state={state} />
 
+      {state.data_mode === "hardware" && (
+        <EmergencyStopControl
+          controller={state.controller}
+          disabled={stale}
+          active={dashboard.activeAction === "emergency-stop"}
+          error={dashboard.activeAction === "emergency-stop" ? null : dashboard.actionError}
+          onStop={() => void dashboard.emergencyStop()}
+        />
+      )}
+
       <section className="zones-section" aria-labelledby="zones-title">
         <div className="section-title-row">
           <div><p className="section-kicker">Independent intelligence paths</p><h2 id="zones-title">Zone A / Zone B</h2></div>
@@ -120,7 +131,7 @@ export function Dashboard() {
 
       <footer className="dashboard-footer">
         <span>VIVAYU Aqua · planning intelligence</span>
-        <span>Controller, physical mix verification, and actuation are not connected</span>
+        <span>Irrigation start remains unavailable; STOP_ALL is the only command control</span>
       </footer>
     </main>
   );

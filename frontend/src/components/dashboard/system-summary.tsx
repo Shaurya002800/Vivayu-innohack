@@ -52,12 +52,16 @@ export function SystemSummary({ state }: { state: SystemState }) {
         ? "Connecting"
         : "Not connected";
   const telemetryDetail = telemetryConnection.status === "CONNECTED"
-    ? `${telemetryConnection.packets_received.toLocaleString("en-IN")} valid packets · receive-only; actuators unavailable`
+    ? `${telemetryConnection.packets_received.toLocaleString("en-IN")} valid inbound packets · controller separate`
     : telemetryConnection.status === "DISABLED"
       ? "Serial hardware is not opened in simulation"
       : telemetryConnection.reconnect_pending
-        ? "Receive-only reconnect pending"
+        ? "Serial reconnect pending"
         : "Actuator controller remains unavailable";
+  const controllerDetail = state.controller.communication_fault
+    ?? (state.controller.last_ack_command_id
+      ? `ACK ${state.controller.last_ack_status ?? "pending"} · ${state.controller.last_ack_command_id}`
+      : "Waiting for genuine controller status");
 
   return (
     <section className="system-summary" aria-labelledby="system-overview-title">
@@ -68,7 +72,7 @@ export function SystemSummary({ state }: { state: SystemState }) {
         </div>
         <div className="truth-label">
           <StatusPill label="Planning preview" tone="info" />
-          <span>No hardware actuation</span>
+          <span>No irrigation start controls</span>
         </div>
       </div>
 
@@ -105,6 +109,13 @@ export function SystemSummary({ state }: { state: SystemState }) {
           eyebrow="Telemetry gateway"
           value={telemetryValue}
           detail={telemetryDetail}
+          icon={<PowerIcon />}
+        />
+        <SummaryMetric
+          eyebrow="Controller"
+          value={state.controller.status}
+          detail={controllerDetail}
+          accent={state.controller.status === "IDLE" ? "aqua" : state.controller.execution_uncertain ? "amber" : "neutral"}
           icon={<PowerIcon />}
         />
         <SummaryMetric

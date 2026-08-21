@@ -1,4 +1,5 @@
 import type {
+  CommandRecord,
   DashboardSnapshot,
   FreshwaterAllocationResult,
   IrrigationNeedResult,
@@ -119,4 +120,10 @@ export async function activateSimulationScenario(scenarioId: string): Promise<vo
 
 export async function resetSimulation(): Promise<void> {
   await requestJson<SystemState>("/api/v1/simulation/reset", { method: "POST" });
+}
+
+export async function emergencyStop(): Promise<CommandRecord> {
+  return requestJson<CommandRecord>("/api/v1/system/stop-all", {
+    method: "POST",
+  });
 }

@@ -34,6 +34,14 @@ class Settings:
         os.getenv("SERIAL_RECONNECT_INTERVAL_S", "2")
     )
     serial_max_line_bytes: int = int(os.getenv("SERIAL_MAX_LINE_BYTES", "8192"))
+    command_ack_timeout_s: float = float(
+        os.getenv("COMMAND_ACK_TIMEOUT_S", "1.5")
+    )
+    command_max_retries: int = int(os.getenv("COMMAND_MAX_RETRIES", "2"))
+    command_max_runtime_s: float = float(
+        os.getenv("COMMAND_MAX_RUNTIME_S", "120")
+    )
+    command_history_limit: int = int(os.getenv("COMMAND_HISTORY_LIMIT", "100"))
     farm_latitude: float | None = _optional_float("FARM_LATITUDE", "12.9692")
     farm_longitude: float | None = _optional_float("FARM_LONGITUDE", "79.1559")
     weather_provider: str = os.getenv("WEATHER_PROVIDER", "open-meteo")

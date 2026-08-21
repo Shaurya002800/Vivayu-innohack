@@ -26,6 +26,20 @@ def test_get_complete_state_is_visibly_simulated() -> None:
     assert payload["power"]["solar_power_w"] is None
     assert payload["telemetry_connection"]["status"] == "DISABLED"
     assert payload["telemetry_connection"]["enabled"] is False
+    assert payload["controller"]["status"] == "SIMULATED"
+    assert payload["controller"]["ready"] is False
+
+
+def test_emergency_stop_api_is_explicitly_disabled_in_simulation() -> None:
+    before = api_request("GET", "/api/v1/state").json()
+
+    response = api_request("POST", "/api/v1/system/stop-all")
+
+    assert response.status_code == 409
+    assert "disabled in simulation" in response.json()["detail"]
+    after = api_request("GET", "/api/v1/state").json()
+    assert after["water"] == before["water"]
+    assert after["controller"]["command_history"] == []
 
 
 def test_list_activate_and_reset_simulation_scenario() -> None:

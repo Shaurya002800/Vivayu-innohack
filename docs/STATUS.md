@@ -2,140 +2,177 @@
 
 ## Current milestone
 
-Milestone 9 - Inbound serial telemetry adapter (complete)
+Milestone 10 - Controller command/ACK protocol and fail-safe STOP (complete)
 
 ## Working
 
-- [x] Milestones 1-8 remain frozen and their existing contracts/tests remain green
-- [x] Simulation and hardware both feed the same canonical `SystemState`,
-  `ZoneState`, and `ZoneTelemetry` models
-- [x] `field_telemetry` has a strict canonical Pydantic packet schema with
-  version/type, node, zone, finite-number, percentage, range, and extra-field
-  validation
-- [x] Missing/omitted physical sensor channels remain `null`; no zero, demo, or
-  cross-zone value is substituted
-- [x] The receive-only pySerial bridge supports partial reads, multiple lines per
-  read, blank lines, CRLF, strict UTF-8, and a configurable maximum line length
-- [x] Malformed JSON, invalid UTF-8, unsupported versions/types, invalid zones,
-  node/zone mismatches, invalid numbers, and oversized lines are rejected without
-  stopping the reader or FastAPI
-- [x] Interleaved A/B packets are routed by explicit `zone_id` and remain fully
-  isolated; the serial port is never used to infer a zone
-- [x] Valid packets call the existing state ingestion path rather than duplicating
-  irrigation or Vivayu logic in the bridge
-- [x] Five compatible Zone A hardware packets naturally produce M7
-  `COLLECTING 1/5` through `READY`, while Zone B remains unchanged
-- [x] Missing Vivayu-compatible channels produce the existing explicit
-  `UNAVAILABLE` research-health state without fabricated output
-- [x] Real-style soil telemetry changes the existing M4 preview through canonical
-  state, with no M4 calculation inside the serial adapter
-- [x] Backend-owned receive timestamps drive per-zone freshness; device
-  `timestamp_ms` may restart at zero after reboot
-- [x] Stale zones become offline independently without erasing last-known values,
-  and a fresh valid packet restores online state immediately
-- [x] Hardware mode starts from safe unavailable/null values and never falls back
-  to simulation data
-- [x] Simulation mode keeps all six demo scenarios, leaves serial `DISABLED`, and
-  never opens or consumes a hardware port
-- [x] A configured unavailable port does not crash the backend; bounded reconnect
-  attempts continue and recover automatically when a device becomes available
-- [x] Disconnects during reads close the old handle and enter the reconnect loop
-- [x] FastAPI lifespan owns bridge startup/shutdown; shutdown closes the receive
-  handle and joins the reader thread
-- [x] The bridge's production interface is receive-only and performs no serial
-  writes
-- [x] Canonical `/api/v1/state` includes gateway connection status, timestamps,
-  last error, configured port/baud, reconnect metadata, and packet counters
-- [x] The dashboard labels this as `Telemetry gateway`, shows simulation-only or
-  connected/reconnecting state, and does not claim actuator-controller readiness
+- [x] Milestones 1-9 remain frozen and all prior regression tests remain green
+- [x] Milestone 9 `field_telemetry`, reconnect, stale-node, A/B isolation, M4
+  integration, and independent M7 windows are preserved
+- [x] Strict canonical version-1.0 schemas exist for `MIX_WATER`,
+  `ADD_FRESH_WATER`, `IRRIGATE_ZONE`, and `STOP_ALL`
+- [x] Pump-affecting commands require positive finite volumes and finite bounded
+  `max_runtime_s`; STOP contains no positive-action fields
+- [x] Unsupported versions/actions, invalid zones/IDs, non-finite values,
+  invalid runtime, and unknown fields are rejected before serial write
+- [x] Default command IDs use UUIDs; generation is injectable for deterministic
+  tests and recent issued IDs are retained in a bounded duplicate guard
+- [x] Outbound commands use the same newline-delimited UTF-8 JSON transport as
+  inbound telemetry and are serialized into exactly one line
+- [x] A dedicated write lock prevents concurrent command bytes from interleaving
+- [x] ACK vocabulary is constrained to `accepted`, `duplicate`, `rejected`, and
+  `busy`; unknown statuses are never treated as success
+- [x] ACK matching is strictly by `command_id`; unknown, stale, premature, and
+  conflicting ACKs cannot complete another command
+- [x] Command lifecycle is explicit: `CREATED`, `SENT`, `ACKNOWLEDGED`,
+  `REJECTED`, `TIMED_OUT`, and `FAILED`
+- [x] History stores command/action, created/latest-send/ACK/update timestamps,
+  retries, status, confirmation source, and safe error text
+- [x] Command history and the recent-ID guard are bounded in memory
+- [x] ACK retries are finite/configurable and reuse the exact same command ID and
+  serialized packet
+- [x] The deterministic lost-ACK integration proves duplicate retry handling:
+  `cmd-001` is sent twice while mock physical action count remains exactly one
+- [x] Strict inbound `controller_status` supports `IDLE`, `MIXING`, `IRRIGATING`,
+  `EMERGENCY_STOP`, and `FAULT`, with emergency-flag consistency validation
+- [x] Canonical controller safety truth is separate from telemetry-gateway
+  connectivity: `SIMULATED`, `DISCONNECTED`, `UNKNOWN`, `IDLE`, `ACTIVE`,
+  `EMERGENCY_STOP`, or `FAULT`
+- [x] Only a genuine controller `IDLE` report sets `controller.ready=true`
+- [x] `STOP_ALL` bypasses normal readiness/pending-command gates and is next in
+  the locked write order even when another command awaits ACK
+- [x] `emergency_stop()` safely sends or queues STOP in hardware mode
+- [x] `POST /api/v1/system/stop-all` is the only public controller-command
+  endpoint; there is no irrigation/start/execute endpoint
+- [x] Simulation rejects emergency-stop command I/O explicitly, remains labelled
+  `SIMULATED`, opens no serial port, and keeps all six scenarios
+- [x] ACK timeout or uncertain disconnect marks controller execution unknown,
+  requires STOP, and never assumes the original physical action did not start
+- [x] Reconnect sends a queued STOP before normal commands can be accepted
+- [x] STOP ACK alone does not clear uncertainty; controller `IDLE` is required
+- [x] The fail-safe integration proves `command -> timeout -> UNKNOWN -> STOP ->
+  EMERGENCY_STOP -> IDLE -> safe`
+- [x] Hardware mode still starts from null/unavailable values and never falls
+  back to demo data
+- [x] M4/M5/M6 outputs are not connected to command transport and water banks are
+  not deducted
+- [x] The dashboard shows telemetry gateway and controller readiness separately
+- [x] Hardware mode adds a deliberate two-click emergency STOP control with a
+  five-second confirmation window; it exposes no irrigation-start control
+- [x] FastAPI lifespan still owns clean bridge startup, handle closure, and thread
+  shutdown
 
 ## Configuration
 
 - `DATA_MODE=simulation|hardware`
-- `SERIAL_PORT` (blank/unset by default; no OS-specific port is hard-coded)
+- `SERIAL_PORT` (blank/unset by default)
 - `SERIAL_BAUD=115200`
 - `SERIAL_READ_TIMEOUT_S=0.25`
 - `SERIAL_RECONNECT_INTERVAL_S=2`
 - `SERIAL_MAX_LINE_BYTES=8192`
-- `ZONE_STALE_SECONDS=10` controls receive-time zone freshness
+- `COMMAND_ACK_TIMEOUT_S=1.5`
+- `COMMAND_MAX_RETRIES=2`
+- `COMMAND_MAX_RUNTIME_S=120`
+- `COMMAND_HISTORY_LIMIT=100`
+- `ZONE_STALE_SECONDS=10`
 
-The exact implemented inbound packet, framing, rejection, reconnect, staleness,
-and mode behavior is frozen in `docs/HARDWARE_CONTRACT.md`.
+The exact packet, command, ACK, duplicate, timeout, reconnect, controller-state,
+and firmware safety obligations are frozen in `docs/HARDWARE_CONTRACT.md`.
 
-## Files completed for Milestone 9
+## Files completed for Milestone 10
 
-- `.env.example`: safe serial configuration defaults
-- `backend/app/config.py`: environment-backed serial settings
-- `backend/app/schemas.py`: field packet and gateway-state schemas plus additive
-  canonical `SystemState.telemetry_connection`
-- `backend/app/services/serial_bridge.py`: receive-only framing, validation,
-  dispatch, lifecycle, status, and reconnect implementation
-- `backend/app/state.py`: backend receive-time freshness, per-zone stale recovery,
-  and gateway-state publication
-- `backend/app/main.py`: FastAPI lifespan ownership
-- `backend/tests/test_serial_bridge.py`: 22 focused unit/integration tests
-- `frontend/src/types/index.ts`: matching additive gateway state contract
-- `frontend/src/components/dashboard/system-summary.tsx`: truthful telemetry-gateway
-  status separate from actuator readiness
-- `docs/HARDWARE_CONTRACT.md`: frozen Milestone 9 inbound contract
+- `.env.example`: command timeout/retry/runtime/history defaults
+- `backend/app/config.py`: environment-backed M10 settings
+- `backend/app/schemas.py`: strict action commands, ACK/status packets, lifecycle
+  history, controller safety state, and additive `SystemState.controller`
+- `backend/app/services/serial_bridge.py`: locked writes, command IDs/history,
+  ACK dispatch, retries/timeouts, controller status, disconnect uncertainty, and
+  priority STOP behavior while preserving M9 telemetry
+- `backend/app/services/actuation_service.py`: explicit later-milestone execution
+  boundary
+- `backend/app/state.py`: canonical controller-state publication and mode safety
+- `backend/app/api/controller.py`: emergency-stop-only API
+- `backend/app/main.py`: controller router registration
+- `backend/tests/test_controller_protocol.py`: 29 focused protocol/safety tests
+- `backend/tests/test_serial_bridge.py`: M9 duplex-factory expectation retained
+- `backend/tests/test_state_api.py`: additive controller state and simulation-stop
+  API assertions
+- `frontend/src/types/index.ts`: exact command/controller response types
+- `frontend/src/lib/api.ts`: emergency-stop API call
+- `frontend/src/hooks/use-dashboard-data.ts`: explicit stop action/refresh state
+- `frontend/src/components/dashboard/emergency-stop-control.tsx`: deliberate
+  hardware-only two-stage STOP control
+- `frontend/src/components/dashboard/system-summary.tsx`: separate gateway and
+  controller truth
+- `frontend/src/components/dashboard/dashboard.tsx`: hardware safety control and
+  no-start boundary
+- `frontend/src/app/globals.css`: responsive controller/STOP presentation
+- `docs/HARDWARE_CONTRACT.md`: frozen M9+M10 serial safety contract
 - `docs/STATUS.md`: this completion record
 
-## Simulation versus hardware after Milestone 9
+## Safety boundary
 
-Simulation has not been removed. In simulation mode, scenario sensor inputs are
-demo data and M3-M7 calculations remain real. In hardware mode, genuine ESP32
-field packets replace zone telemetry through the same backend path. Water-source
-TDS/volume, physical mixed TDS, power, pumps, and valves do not become hardware
-data merely because field telemetry is connected; unavailable channels remain
-explicitly unavailable.
+An ACK timeout does not prove a pump never started. The backend therefore marks
+execution uncertain and prioritizes STOP until the controller reports IDLE.
+Every positive command retains `max_runtime_s` because final firmware must stop
+outputs locally if the laptop disappears. No physical controller firmware was
+implemented or exercised in this milestone, so actual pumps-off behavior is a
+documented firmware obligation, not a fabricated software claim.
 
 ## Not working / intentionally deferred
 
-- No Milestone 9 blockers.
-- No serial writes, controller commands, command IDs, ACK, `STOP_ALL`, firmware,
-  pump/valve actuation, or irrigation execution was added.
-- No physical mix-TDS verification/correction loop or source-bank deduction exists.
-- No persistent decision orchestration or SQLite expansion was added.
-- No crop, weather, irrigation, blending, allocation, or Vivayu logic was
-  duplicated in the serial bridge or frontend.
-- No Vivayu model retraining, threshold change, or frozen legacy-file change was
-  made.
+- No Milestone 10 software blockers.
+- No automatic irrigation decisions, M4/M5/M6 execution wiring, approved
+  decision execution, or general start endpoint was added.
+- No M11 TDS feedback/correction or physical mixed-water approval exists.
+- No M12 irrigation execution, post-soil verification, freshwater deduction,
+  adaptive calibration, or event persistence exists.
+- No autonomous pump sequencing, firmware, manual pump toggle, or actuator-state
+  claim was added.
+- No crop/weather/water/Vivayu calculation was duplicated or changed.
+- No model retraining, frozen legacy-file change, or SQLite expansion was made.
 
 ## Tests and verification
 
-- Focused Milestone 9 serial suite: `22 passed`
-- Complete backend regression suite: `244 passed` (the prior 222 plus 22 M9 tests)
+- Focused Milestone 10 protocol/safety suite: `29 passed`
+- Complete backend regression suite: `274 passed`
 - Python compilation: passed (`.venv/bin/python -m compileall -q app tests`)
 - Frontend lint: passed (`npm run lint`)
 - Frontend production build and TypeScript check: passed (`npm run build`)
 - Patch whitespace/error validation: passed (`git diff --check`)
-- Physical serial hardware was not required; serial I/O was tested through an
-  injectable deterministic adapter
+- Physical controller: not connected; deterministic injectable duplex serial and
+  mock-controller contracts were used
 
-## Last end-to-end verified paths
+## Last critical integration runs
 
 ```text
-five compatible Zone A serial packets
-  -> canonical Zone A telemetry
-  -> independent Vivayu window
-  -> COLLECTING 1/5 ... READY
-  -> Zone B unchanged
+cmd-001 sent
+  -> ACK lost
+  -> cmd-001 retried unchanged
+  -> mock duplicate-ID cache returns duplicate
+  -> physical action count = 1
 
-real-style Zone A soil packet
-  -> canonical Zone A state
-  -> existing M4 CRITICAL preview and calculated request
+IRRIGATE_ZONE sent
+  -> ACK timeout
+  -> controller UNKNOWN / execution uncertain
+  -> STOP_ALL written with priority
+  -> STOP ACK does not clear uncertainty
+  -> controller EMERGENCY_STOP report
+  -> controller IDLE report
+  -> ready/safe state restored
 ```
 
-Reconnect, malformed input recovery, independent A/B staleness, ESP32 uptime
-restart, simulation separation, no-write behavior, and clean shutdown are also
-covered by automated tests.
+A/B field telemetry isolation, null handling, M4 flow, M7 rolling windows,
+simulation separation, reconnect handling, clean shutdown, no automatic writes,
+and no water deduction remain covered by the complete suite.
 
 ## Next exact task
 
-1. Freeze Milestone 9.
-2. Connect a physical ESP32 only for a contract smoke test when hardware is
-   available; this does not require changing the Milestone 9 design.
-3. Begin Milestone 10 only when explicitly authorized: controller command IDs,
-   ACK/timeout handling, duplicate-ID safety, and `STOP_ALL` fail-safe behavior.
-4. Do not implement TDS correction, irrigation execution, source deduction, or
-   broader orchestration as part of Milestone 10 unless separately authorized.
+1. Freeze Milestone 10.
+2. When controller hardware is available, perform a contract smoke test for
+   newline framing, duplicate-ID cache, local `max_runtime_s`, STOP priority, and
+   IDLE recovery without changing M10 semantics.
+3. Begin Milestone 11 only when explicitly authorized: MIX -> VERIFY_TDS ->
+   bounded fresh correction/retry -> approve/fault.
+4. Do not add irrigation execution, post-soil verification, freshwater
+   deduction, or adaptive calibration until Milestone 12 is separately approved.
