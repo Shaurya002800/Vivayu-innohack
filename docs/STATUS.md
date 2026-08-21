@@ -2,7 +2,9 @@
 
 ## Current milestone
 
-Milestone 10 - Controller command/ACK protocol and fail-safe STOP (complete)
+Milestone 10 - Controller command/ACK protocol and fail-safe STOP (complete and
+frozen). Post-Milestone-10 farmer-first dashboard redesign is also complete; no
+Milestone 11 behavior was added.
 
 ## Working
 
@@ -61,6 +63,26 @@ Milestone 10 - Controller command/ACK protocol and fail-safe STOP (complete)
   five-second confirmation window; it exposes no irrigation-start control
 - [x] FastAPI lifespan still owns clean bridge startup, handle closure, and thread
   shutdown
+- [x] The dashboard information architecture is now split into five focused
+  destinations: Overview, Zones, Water, Insights, and System
+- [x] Overview answers the farmer's immediate questions first: what needs
+  attention, which field is affected, whether water is available, and whether
+  the system is connected
+- [x] The farm visual is a functional Zone A/Zone B selector backed by canonical
+  telemetry and backend decision results; it contains no invented field values
+- [x] Zones displays one selected field at a time, with independent moisture,
+  crop/stage, environment, M4 plan, M5 plan, M6 allocation, and M7 research state
+- [x] Water visualizes source banks, the safe blend, predicted-versus-target TDS,
+  measured-TDS unavailability, freshwater allocation, and safe-ratio preservation
+- [x] Insights presents human-readable backend reasons first and keeps technical
+  reason/warning codes behind progressive disclosure
+- [x] System contains provenance, gateway/controller separation, power/weather
+  availability, independent sensor channels, six simulation controls, command
+  history, and the hardware-only two-click STOP control
+- [x] Responsive layouts were verified at 1440, 1024, 768, 430, and 390 pixels;
+  mobile uses a five-item 54-pixel bottom navigation with no horizontal overflow
+- [x] Loading, disconnected, stale-data, simulation, hardware, research-only,
+  pending-hardware, and unavailable/null states remain explicit
 
 ## Configuration
 
@@ -110,6 +132,30 @@ and firmware safety obligations are frozen in `docs/HARDWARE_CONTRACT.md`.
 - `docs/HARDWARE_CONTRACT.md`: frozen M9+M10 serial safety contract
 - `docs/STATUS.md`: this completion record
 
+## Files completed for the dashboard redesign
+
+- `frontend/src/components/dashboard/dashboard.tsx`: focused view routing,
+  selected-zone state, truthful loading/offline states, and shared app shell
+- `frontend/src/components/shell/`: branded responsive shell and desktop/mobile
+  product navigation
+- `frontend/src/components/overview/`: contextual hero, interactive two-zone farm
+  visual, status strip, and farmer task shortcuts
+- `frontend/src/components/zones/`: isolated zone selector and single-zone
+  moisture/crop/irrigation/water/health workspace
+- `frontend/src/components/water/`: source-to-blend flow, TDS truth, scarcity bank,
+  ratio-safety state, and allocation explanation
+- `frontend/src/components/insights/`: farmer-readable decision path, M4/M5/M6
+  reasons, technical disclosures, and research-only M7 section
+- `frontend/src/components/system/`: data provenance, connections, controller,
+  power, weather, sensor status, simulations, and command history
+- `frontend/src/components/ui/icon.tsx`: lightweight accessible presentation icon
+  set with no new runtime dependency
+- `frontend/src/lib/presentation.ts`: presentation-only farmer labels and farm
+  condition selection; domain calculations remain backend-owned
+- `frontend/src/app/globals.css`: complete responsive visual system, layout,
+  focus states, touch targets, reduced-motion handling, and breakpoint composition
+- `docs/STATUS.md`: redesign scope and verification record
+
 ## Safety boundary
 
 An ACK timeout does not prove a pump never started. The backend therefore marks
@@ -131,6 +177,11 @@ documented firmware obligation, not a fabricated software claim.
   claim was added.
 - No crop/weather/water/Vivayu calculation was duplicated or changed.
 - No model retraining, frozen legacy-file change, or SQLite expansion was made.
+- No API contract, backend calculation, irrigation logic, controller behavior,
+  scenario data, crop profile, weather adapter, or legacy model semantics changed
+  during the dashboard redesign.
+- Historical trend charts remain intentionally unavailable because no canonical
+  history endpoint exists; the UI states this instead of fabricating a chart.
 
 ## Tests and verification
 
@@ -142,6 +193,13 @@ documented firmware obligation, not a fabricated software claim.
 - Patch whitespace/error validation: passed (`git diff --check`)
 - Physical controller: not connected; deterministic injectable duplex serial and
   mock-controller contracts were used
+- In-app browser functional QA: passed against live local frontend/backend for
+  Overview, Zone A/B selection, Water, Insights, System, all six scenario
+  controls, research-only boundaries, pending-hardware/null labels, and technical
+  disclosure
+- Responsive browser QA: passed at 1440, 1024, 768, 430, and 390 pixels with no
+  horizontal document overflow; desktop, tablet, and mobile navigation states
+  were verified
 
 ## Last critical integration runs
 
@@ -168,7 +226,7 @@ and no water deduction remain covered by the complete suite.
 
 ## Next exact task
 
-1. Freeze Milestone 10.
+1. Keep Milestone 10 and the farmer-first dashboard redesign frozen.
 2. When controller hardware is available, perform a contract smoke test for
    newline framing, duplicate-ID cache, local `max_runtime_s`, STOP priority, and
    IDLE recovery without changing M10 semantics.

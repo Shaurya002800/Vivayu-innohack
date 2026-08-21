@@ -1,138 +1,87 @@
 "use client";
 
-import { useDashboardData } from "@/hooks/use-dashboard-data";
+import { useState } from "react";
 
-import { AllocationOverview } from "./allocation-overview";
-import { DashboardHeader } from "./dashboard-header";
-import { ExplanationPanel } from "./explanation-panel";
-import { EmergencyStopControl } from "./emergency-stop-control";
-import { SimulationControls } from "./simulation-controls";
-import { SystemSummary } from "./system-summary";
-import { ZoneCard } from "./zone-card";
+import { InsightsView } from "@/components/insights/insights-view";
+import { OverviewView } from "@/components/overview/overview-view";
+import { AppShell } from "@/components/shell/app-shell";
+import { SystemView } from "@/components/system/system-view";
+import { Icon } from "@/components/ui/icon";
+import { WaterView } from "@/components/water/water-view";
+import { ZoneView } from "@/components/zones/zone-view";
+import { useDashboardData } from "@/hooks/use-dashboard-data";
+import type { ProductView } from "@/lib/presentation";
+import type { ZoneId } from "@/types";
 
 function LoadingDashboard() {
   return (
-    <main className="dashboard-shell">
-      <DashboardHeader
-        dataMode={null}
-        activeScenarioId={null}
-        scenarios={[]}
-        connected={false}
-        stale={false}
-        updatedAt={null}
-      />
-      <section className="loading-panel panel" aria-live="polite">
-        <div className="loading-orbit"><span /></div>
-        <div><p className="section-kicker">Connecting securely</p><h2>Loading canonical farm state</h2><p>No values are shown until the backend responds.</p></div>
-      </section>
-    </main>
+    <div className="standalone-state">
+      <div className="loading-brand"><Icon name="leaf" /></div>
+      <span className="section-label">Connecting to VIVAYU Aqua</span>
+      <h1>Preparing your farm overview</h1>
+      <p>No sensor or planning value is shown until the backend responds.</p>
+      <div className="loading-bar" aria-label="Loading"><span /></div>
+    </div>
   );
 }
 
-function OfflineDashboard({ error, scenarios }: { error: string; scenarios: ReturnType<typeof useDashboardData>["scenarios"] }) {
+function OfflineDashboard({ error }: { error: string }) {
   return (
-    <main className="dashboard-shell">
-      <DashboardHeader
-        dataMode={null}
-        activeScenarioId={null}
-        scenarios={scenarios}
-        connected={false}
-        stale={false}
-        updatedAt={null}
-      />
-      <section className="offline-panel panel" role="alert">
-        <span className="offline-symbol">!</span>
-        <div>
-          <p className="section-kicker">Backend connection unavailable</p>
-          <h2>Dashboard data is unavailable</h2>
-          <p>{error}. Sensor, weather, TDS, power, irrigation, and data-mode values remain unknown—nothing has been substituted.</p>
-        </div>
-      </section>
-      <section className="offline-truth-grid">
-        {["Data mode", "Soil telemetry", "Weather", "Water-source TDS", "Irrigation preview", "Power telemetry"].map((label) => (
-          <div key={label}><span>{label}</span><strong>—</strong><small>Unavailable</small></div>
-        ))}
-      </section>
-    </main>
+    <div className="standalone-state offline-state" role="alert">
+      <div className="loading-brand"><Icon name="alert" /></div>
+      <span className="section-label">Backend unavailable</span>
+      <h1>Farm data cannot be reached</h1>
+      <p>{error}. Nothing has been substituted: soil, weather, TDS, power and recommendations remain unavailable.</p>
+      <a href="http://localhost:8000/docs">Check backend API</a>
+    </div>
   );
 }
 
 export function Dashboard() {
   const dashboard = useDashboardData();
+  const [activeView, setActiveView] = useState<ProductView>("overview");
+  const [selectedZone, setSelectedZone] = useState<ZoneId>("A");
   const { snapshot } = dashboard;
 
   if (dashboard.isInitialLoading && !snapshot) return <LoadingDashboard />;
-  if (!snapshot) return <OfflineDashboard error={dashboard.connectionError ?? "Backend is unavailable"} scenarios={dashboard.scenarios} />;
+  if (!snapshot) return <OfflineDashboard error={dashboard.connectionError ?? "Backend is unavailable"} />;
 
-  const state = snapshot.state;
   const stale = dashboard.connectionError !== null;
-
-  return (
-    <main className="dashboard-shell">
-      <DashboardHeader
-        dataMode={state.data_mode}
-        activeScenarioId={state.active_scenario_id}
-        scenarios={dashboard.scenarios}
-        connected={!stale}
+  const view = {
+    overview: <OverviewView snapshot={snapshot} stale={stale} selectedZone={selectedZone} onSelectZone={setSelectedZone} onNavigate={setActiveView} />,
+    zones: <ZoneView snapshot={snapshot} selectedZone={selectedZone} onSelectZone={setSelectedZone} />,
+    water: <WaterView snapshot={snapshot} selectedZone={selectedZone} onSelectZone={setSelectedZone} />,
+    insights: <InsightsView snapshot={snapshot} selectedZone={selectedZone} onSelectZone={setSelectedZone} />,
+    system: (
+      <SystemView
+        snapshot={snapshot}
         stale={stale}
-        updatedAt={state.updated_at}
-      />
-
-      {stale && (
-        <div className="connection-banner" role="status">
-          Connection interrupted. Last known backend snapshot is shown; live polling will retry automatically.
-        </div>
-      )}
-
-      <SystemSummary state={state} />
-
-      {state.data_mode === "hardware" && (
-        <EmergencyStopControl
-          controller={state.controller}
-          disabled={stale}
-          active={dashboard.activeAction === "emergency-stop"}
-          error={dashboard.activeAction === "emergency-stop" ? null : dashboard.actionError}
-          onStop={() => void dashboard.emergencyStop()}
-        />
-      )}
-
-      <section className="zones-section" aria-labelledby="zones-title">
-        <div className="section-title-row">
-          <div><p className="section-kicker">Independent intelligence paths</p><h2 id="zones-title">Zone A / Zone B</h2></div>
-          <p className="section-note">Soil → crop stage → weather → water need → water quality → scarcity allocation</p>
-        </div>
-        <div className="zone-grid">
-          <ZoneCard
-            zone={state.zones.A}
-            irrigation={snapshot.irrigation.A}
-            waterQuality={snapshot.waterQuality.A}
-            allocation={snapshot.allocation.zones.A}
-          />
-          <ZoneCard
-            zone={state.zones.B}
-            irrigation={snapshot.irrigation.B}
-            waterQuality={snapshot.waterQuality.B}
-            allocation={snapshot.allocation.zones.B}
-          />
-        </div>
-      </section>
-
-      <AllocationOverview allocation={snapshot.allocation} />
-      <ExplanationPanel snapshot={snapshot} />
-      <SimulationControls
         scenarios={dashboard.scenarios}
-        activeScenarioId={state.active_scenario_id}
         activeAction={dashboard.activeAction}
         actionError={dashboard.actionError}
-        disabled={state.data_mode !== "simulation" || stale}
-        onActivate={dashboard.activateScenario}
-        onReset={dashboard.resetScenario}
+        onActivateScenario={dashboard.activateScenario}
+        onResetScenario={dashboard.resetScenario}
+        onEmergencyStop={dashboard.emergencyStop}
       />
+    ),
+  }[activeView];
 
-      <footer className="dashboard-footer">
-        <span>VIVAYU Aqua · planning intelligence</span>
-        <span>Irrigation start remains unavailable; STOP_ALL is the only command control</span>
+  return (
+    <AppShell
+      activeView={activeView}
+      onViewChange={setActiveView}
+      dataMode={snapshot.state.data_mode}
+      activeScenarioId={snapshot.state.active_scenario_id}
+      scenarios={dashboard.scenarios}
+      connected={!stale}
+      stale={stale}
+      updatedAt={snapshot.state.updated_at}
+    >
+      {view}
+      <footer className="product-footer">
+        <span>VIVAYU Aqua · farmer-first planning intelligence</span>
+        <span>Irrigation start remains unavailable · STOP_ALL is the only command control</span>
       </footer>
-    </main>
+    </AppShell>
   );
 }
