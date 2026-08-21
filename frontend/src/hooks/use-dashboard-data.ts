@@ -9,11 +9,11 @@ import {
   fetchSimulationScenarios,
   resetSimulation,
 } from "@/lib/api";
-import type { DashboardSnapshot, SimulationScenarioSummary } from "@/types";
+import type { DashboardContext, DashboardSnapshot, SimulationScenarioSummary } from "@/types";
 
 const POLL_INTERVAL_MS = 1_000;
 
-export function useDashboardData() {
+export function useDashboardData(context: DashboardContext = "live") {
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
   const [scenarios, setScenarios] = useState<SimulationScenarioSummary[]>([]);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export function useDashboardData() {
     if (pollInFlight.current) return;
     pollInFlight.current = true;
     try {
-      const next = await fetchDashboardSnapshot();
+      const next = await fetchDashboardSnapshot(context);
       if (!mounted.current) return;
       setSnapshot(next);
       setConnectionError(null);
@@ -38,7 +38,7 @@ export function useDashboardData() {
       pollInFlight.current = false;
       if (mounted.current) setIsInitialLoading(false);
     }
-  }, []);
+  }, [context]);
 
   useEffect(() => {
     mounted.current = true;
@@ -65,8 +65,10 @@ export function useDashboardData() {
       try {
         await action();
         await refresh();
+        return true;
       } catch (error: unknown) {
         setActionError(error instanceof Error ? error.message : "Action failed");
+        return false;
       } finally {
         setActiveAction(null);
       }
@@ -82,8 +84,9 @@ export function useDashboardData() {
     activeAction,
     isInitialLoading,
     refresh,
-    activateScenario: (scenarioId: string) =>
-      runAction(scenarioId, () => activateSimulationScenario(scenarioId)),
+    activateScenario: (scenarioId: string, configureCurrentSimulation = true) =>
+      runAction(scenarioId, () =>
+        activateSimulationScenario(scenarioId, configureCurrentSimulation)),
     resetScenario: () => runAction("reset", resetSimulation),
     emergencyStop: () => runAction("emergency-stop", async () => {
       await emergencyStop();

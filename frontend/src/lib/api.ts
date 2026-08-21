@@ -1,5 +1,6 @@
 import type {
   CommandRecord,
+  DashboardContext,
   DashboardSnapshot,
   FreshwaterAllocationResult,
   IrrigationNeedResult,
@@ -67,7 +68,26 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
-export async function fetchDashboardSnapshot(): Promise<DashboardSnapshot> {
+interface DemoSnapshotResponse {
+  state: SystemState;
+  irrigation: DashboardSnapshot["irrigation"];
+  water_quality: DashboardSnapshot["waterQuality"];
+  allocation: FreshwaterAllocationResult;
+}
+
+export async function fetchDashboardSnapshot(
+  context: DashboardContext = "live",
+): Promise<DashboardSnapshot> {
+  if (context === "demo") {
+    const demo = await requestJson<DemoSnapshotResponse>("/api/v1/simulation/snapshot");
+    return {
+      state: demo.state,
+      irrigation: demo.irrigation,
+      waterQuality: demo.water_quality,
+      allocation: demo.allocation,
+      receivedAt: Date.now(),
+    };
+  }
   const [state, irrigationA, irrigationB, qualityA, qualityB, allocation] =
     await Promise.all([
       requestJson<SystemState>("/api/v1/state"),
@@ -95,27 +115,26 @@ async function configureDemoZone(zoneId: ZoneId): Promise<void> {
   await Promise.all([
     requestJson<PrototypeIrrigationParameters>(
       `/api/v1/zones/${zoneId}/irrigation-parameters`,
-      {
-        method: "PUT",
-        body: JSON.stringify(DEMO_IRRIGATION_PARAMETERS),
-      },
+      { method: "PUT", body: JSON.stringify(DEMO_IRRIGATION_PARAMETERS) },
     ),
     requestJson<PrototypeWaterQualityParameters>(
       `/api/v1/water/zones/${zoneId}/constraint`,
-      {
-        method: "PUT",
-        body: JSON.stringify(DEMO_WATER_QUALITY_PARAMETERS),
-      },
+      { method: "PUT", body: JSON.stringify(DEMO_WATER_QUALITY_PARAMETERS) },
     ),
   ]);
 }
 
-export async function activateSimulationScenario(scenarioId: string): Promise<void> {
+export async function activateSimulationScenario(
+  scenarioId: string,
+  configureCurrentSimulation = true,
+): Promise<void> {
   await requestJson<SystemState>("/api/v1/simulation/load", {
     method: "POST",
     body: JSON.stringify({ scenario_id: scenarioId }),
   });
-  await Promise.all([configureDemoZone("A"), configureDemoZone("B")]);
+  if (configureCurrentSimulation) {
+    await Promise.all([configureDemoZone("A"), configureDemoZone("B")]);
+  }
 }
 
 export async function resetSimulation(): Promise<void> {

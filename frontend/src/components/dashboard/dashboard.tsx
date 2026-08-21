@@ -11,7 +11,7 @@ import { WaterView } from "@/components/water/water-view";
 import { ZoneView } from "@/components/zones/zone-view";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 import type { ProductView } from "@/lib/presentation";
-import type { ZoneId } from "@/types";
+import type { DashboardContext, ZoneId } from "@/types";
 
 function LoadingDashboard() {
   return (
@@ -38,7 +38,8 @@ function OfflineDashboard({ error }: { error: string }) {
 }
 
 export function Dashboard() {
-  const dashboard = useDashboardData();
+  const [dashboardContext, setDashboardContext] = useState<DashboardContext>("live");
+  const dashboard = useDashboardData(dashboardContext);
   const [activeView, setActiveView] = useState<ProductView>("overview");
   const [selectedZone, setSelectedZone] = useState<ZoneId>("A");
   const { snapshot } = dashboard;
@@ -47,6 +48,15 @@ export function Dashboard() {
   if (!snapshot) return <OfflineDashboard error={dashboard.connectionError ?? "Backend is unavailable"} />;
 
   const stale = dashboard.connectionError !== null;
+  const activateScenario = async (scenarioId: string) => {
+    const configureCurrentSimulation =
+      dashboardContext === "live" && snapshot.state.data_mode === "simulation";
+    const loaded = await dashboard.activateScenario(
+      scenarioId,
+      configureCurrentSimulation,
+    );
+    if (loaded && snapshot.state.data_mode === "hardware") setDashboardContext("demo");
+  };
   const view = {
     overview: <OverviewView snapshot={snapshot} stale={stale} selectedZone={selectedZone} onSelectZone={setSelectedZone} onNavigate={setActiveView} />,
     zones: <ZoneView snapshot={snapshot} selectedZone={selectedZone} onSelectZone={setSelectedZone} />,
@@ -59,9 +69,10 @@ export function Dashboard() {
         scenarios={dashboard.scenarios}
         activeAction={dashboard.activeAction}
         actionError={dashboard.actionError}
-        onActivateScenario={dashboard.activateScenario}
-        onResetScenario={dashboard.resetScenario}
-        onEmergencyStop={dashboard.emergencyStop}
+        dashboardContext={dashboardContext}
+        onActivateScenario={activateScenario}
+        onResetScenario={async () => { await dashboard.resetScenario(); }}
+        onEmergencyStop={async () => { await dashboard.emergencyStop(); }}
       />
     ),
   }[activeView];
@@ -76,6 +87,8 @@ export function Dashboard() {
       connected={!stale}
       stale={stale}
       updatedAt={snapshot.state.updated_at}
+      dashboardContext={dashboardContext}
+      onReturnLive={() => setDashboardContext("live")}
     >
       {view}
       <footer className="product-footer">

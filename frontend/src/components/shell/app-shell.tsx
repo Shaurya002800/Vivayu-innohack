@@ -1,7 +1,7 @@
 import { Icon } from "@/components/ui/icon";
 import { formatUpdatedAt } from "@/lib/formatting";
 import type { ProductView } from "@/lib/presentation";
-import type { DataMode, SimulationScenarioSummary } from "@/types";
+import type { DashboardContext, DataMode, SimulationScenarioSummary } from "@/types";
 import type { ReactNode } from "react";
 
 import { ProductNavigation } from "./product-navigation";
@@ -15,6 +15,8 @@ interface AppShellProps {
   connected: boolean;
   stale: boolean;
   updatedAt: string;
+  dashboardContext: DashboardContext;
+  onReturnLive: () => void;
   children: ReactNode;
 }
 
@@ -27,6 +29,8 @@ export function AppShell({
   connected,
   stale,
   updatedAt,
+  dashboardContext,
+  onReturnLive,
   children,
 }: AppShellProps) {
   const scenario = scenarios.find((item) => item.id === activeScenarioId);
@@ -45,9 +49,13 @@ export function AppShell({
         <ProductNavigation activeView={activeView} onChange={onViewChange} />
 
         <div className="header-truth">
-          <div className={`mode-badge mode-${dataMode}`}>
+          <div className={`mode-badge mode-${dashboardContext === "demo" ? "demo" : dataMode}`}>
             <span />
-            {dataMode === "simulation" ? "Simulation mode" : "Hardware mode"}
+            {dashboardContext === "demo"
+              ? "Demo · Simulated"
+              : dataMode === "simulation"
+                ? "Simulation mode"
+                : "Live hardware"}
           </div>
           <div className="update-truth">
             <strong>{scenario ? `Demo: ${scenario.name}` : connected ? "Farm data connected" : "Backend unavailable"}</strong>
@@ -60,6 +68,13 @@ export function AppShell({
         <div className="global-connection-alert" role="status">
           <Icon name="alert" />
           Live updates are interrupted. The interface is showing the last valid backend snapshot.
+        </div>
+      )}
+
+      {dashboardContext === "demo" && (
+        <div className="demo-context-banner" role="status">
+          <span><Icon name="alert" /><strong>DEMO MODE</strong> · SIMULATED DATA · physical telemetry is untouched</span>
+          <button type="button" onClick={onReturnLive}>Return to live hardware</button>
         </div>
       )}
 

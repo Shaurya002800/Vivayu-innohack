@@ -19,6 +19,15 @@ def _optional_float(name: str, default: str) -> float | None:
     return float(value) if value else None
 
 
+def _optional_int(name: str, default: str = "") -> int | None:
+    value = os.getenv(name, default).strip()
+    return int(value) if value else None
+
+
+def _optional_text(name: str, default: str = "") -> str | None:
+    return os.getenv(name, default).strip() or None
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     app_name: str = "VIVAYU Aqua API"
@@ -51,6 +60,25 @@ class Settings:
     weather_cache_minutes: float = float(os.getenv("WEATHER_CACHE_MINUTES", "15"))
     weather_request_timeout_s: float = float(os.getenv("WEATHER_REQUEST_TIMEOUT_SECONDS", "5"))
     irrigation_stale_telemetry_after_s: float = float(os.getenv("ZONE_STALE_SECONDS", "10"))
+    field_telemetry_interval_s: float = float(
+        os.getenv("FIELD_TELEMETRY_INTERVAL_S", "1")
+    )
+    zone_a_soil_dry_raw: int | None = _optional_int("ZONE_A_SOIL_DRY_RAW")
+    zone_a_soil_wet_raw: int | None = _optional_int("ZONE_A_SOIL_WET_RAW")
+    zone_b_soil_dry_raw: int | None = _optional_int("ZONE_B_SOIL_DRY_RAW")
+    zone_b_soil_wet_raw: int | None = _optional_int("ZONE_B_SOIL_WET_RAW")
+    zone_a_soil_adc_pin: int | None = _optional_int("ZONE_A_SOIL_ADC_PIN")
+    zone_b_soil_adc_pin: int | None = _optional_int("ZONE_B_SOIL_ADC_PIN")
+    zone_a_bme280_i2c_address: str | None = _optional_text(
+        "ZONE_A_BME280_I2C_ADDRESS"
+    )
+    zone_b_bme280_i2c_address: str | None = _optional_text(
+        "ZONE_B_BME280_I2C_ADDRESS"
+    )
+    zone_a_i2c_sda_pin: int | None = _optional_int("ZONE_A_I2C_SDA_PIN")
+    zone_a_i2c_scl_pin: int | None = _optional_int("ZONE_A_I2C_SCL_PIN")
+    zone_b_i2c_sda_pin: int | None = _optional_int("ZONE_B_I2C_SDA_PIN")
+    zone_b_i2c_scl_pin: int | None = _optional_int("ZONE_B_I2C_SCL_PIN")
     irrigation_strong_rain_probability_pct: float = float(
         os.getenv("IRRIGATION_STRONG_RAIN_PROBABILITY_PCT", "70")
     )

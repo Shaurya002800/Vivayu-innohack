@@ -2,7 +2,7 @@ import { EmergencyStopControl } from "@/components/dashboard/emergency-stop-cont
 import { SimulationControls } from "@/components/dashboard/simulation-controls";
 import { Icon } from "@/components/ui/icon";
 import { formatNumber, formatPercent, formatUpdatedAt, titleCaseCode } from "@/lib/formatting";
-import type { DashboardSnapshot, SimulationScenarioSummary, ZoneId } from "@/types";
+import type { DashboardContext, DashboardSnapshot, SimulationScenarioSummary, ZoneId } from "@/types";
 
 interface SystemViewProps {
   snapshot: DashboardSnapshot;
@@ -10,6 +10,7 @@ interface SystemViewProps {
   scenarios: SimulationScenarioSummary[];
   activeAction: string | null;
   actionError: string | null;
+  dashboardContext: DashboardContext;
   onActivateScenario: (scenarioId: string) => Promise<void>;
   onResetScenario: () => Promise<void>;
   onEmergencyStop: () => Promise<void>;
@@ -30,6 +31,7 @@ export function SystemView({
   scenarios,
   activeAction,
   actionError,
+  dashboardContext,
   onActivateScenario,
   onResetScenario,
   onEmergencyStop,
@@ -42,7 +44,7 @@ export function SystemView({
     <div className="system-view">
       <header className="view-heading">
         <div><span className="section-label">System & provenance</span><h1>Know what is real, simulated, or unavailable.</h1><p>Connections, sensor freshness, power, controller safety and demo tools live here.</p></div>
-        <div className={`system-mode-hero mode-${state.data_mode}`}><span /><div><small>Current data mode</small><strong>{titleCaseCode(state.data_mode)}</strong></div></div>
+        <div className={`system-mode-hero mode-${dashboardContext === "demo" ? "demo" : state.data_mode}`}><span /><div><small>Current data mode</small><strong>{dashboardContext === "demo" ? "Demo · Simulated" : state.data_mode === "hardware" ? "Live hardware" : "Simulation"}</strong></div></div>
       </header>
 
       <section className="system-truth-grid">
@@ -78,17 +80,20 @@ export function SystemView({
       <section className="sensor-provenance-card">
         <div className="section-title-row compact-title-row"><div><span className="section-label">Independent field nodes</span><h2>Sensor provenance</h2></div><p>Missing channels remain unavailable.</p></div>
         <div className="sensor-table" role="table" aria-label="Zone sensor status">
-          <div className="sensor-table-row header" role="row"><span>Zone</span><span>Node</span><span>Soil</span><span>Climate</span><span>VOC channel</span><span>Age</span></div>
+          <div className="sensor-table-row header" role="row"><span>Zone</span><span>Node ID</span><span>Source</span><span>Soil</span><span>Temperature</span><span>Humidity</span><span>Pressure</span><span>Age</span><span>Status</span></div>
           {(["A", "B"] as ZoneId[]).map((zoneId) => {
             const zone = state.zones[zoneId];
             return (
               <div className="sensor-table-row" role="row" key={zoneId}>
                 <strong>Zone {zoneId}</strong>
                 <span>{zone.telemetry.node_id ?? "Unavailable"}</span>
+                <span>{zone.hardware_metadata.source}</span>
                 <span>{formatPercent(zone.telemetry.soil_moisture_pct, 1)}</span>
-                <span>{formatNumber(zone.telemetry.temperature_c, 1, " °C")} / {formatPercent(zone.telemetry.humidity_pct, 0)}</span>
-                <span>{zone.telemetry.gas_resistance_ohm === null ? "Unavailable" : formatNumber(zone.telemetry.gas_resistance_ohm, 0, " Ω")}</span>
+                <span>{formatNumber(zone.telemetry.temperature_c, 1, " °C")}</span>
+                <span>{formatPercent(zone.telemetry.humidity_pct, 0)}</span>
+                <span>{formatNumber(zone.telemetry.pressure_pa === null ? null : zone.telemetry.pressure_pa / 100, 1, " hPa")}</span>
                 <span>{formatNumber(zone.telemetry_age_s, 1, " s")}</span>
+                <span className={`node-status ${zone.online ? "live" : "stale"}`}>{zone.online ? state.data_mode === "hardware" ? "LIVE" : "SIMULATED" : "STALE"}</span>
               </div>
             );
           })}
@@ -96,13 +101,53 @@ export function SystemView({
       </section>
 
       {state.data_mode === "hardware" && (
-        <EmergencyStopControl
-          controller={controller}
-          disabled={stale}
-          active={activeAction === "emergency-stop"}
-          error={activeAction === "emergency-stop" ? null : actionError}
-          onStop={() => void onEmergencyStop()}
-        />
+        <section className="hardware-debug-card">
+          <div className="section-title-row compact-title-row"><div><span className="section-label">Advanced hardware debugging</span><h2>Field-node calibration</h2></div><p>Configured references are shown only when supplied through environment settings.</p></div>
+          <div className="hardware-debug-grid">
+            {(["A", "B"] as ZoneId[]).map((zoneId) => {
+              const zone = state.zones[zoneId];
+              const meta = zone.hardware_metadata;
+              const bmeConnected = zone.telemetry.temperature_c !== null || zone.telemetry.humidity_pct !== null || zone.telemetry.pressure_pa !== null;
+              return (
+                <article key={zoneId}>
+                  <div className="panel-heading"><span>Zone {zoneId} · {zone.telemetry.node_id ?? "waiting for node"}</span><small>{zone.online ? "LIVE" : "OFFLINE"}</small></div>
+                  <div className="debug-values">
+                    <TruthRow label="Raw soil ADC" value={formatNumber(zone.telemetry.soil_moisture_raw)} detail={`Calibrated ${formatPercent(zone.telemetry.soil_moisture_pct, 1)}`} />
+                    <TruthRow label="Dry / wet reference" value={`${formatNumber(meta.soil_dry_raw)} / ${formatNumber(meta.soil_wet_raw)}`} detail={meta.soil_adc_pin === null ? "ADC pin not configured" : `GPIO ${meta.soil_adc_pin}`} />
+                    <TruthRow label="BME280 channels" value={bmeConnected ? "CONNECTED" : "UNAVAILABLE"} detail={meta.bme280_i2c_address ?? "I²C address not configured"} tone={bmeConnected ? "stable" : "neutral"} />
+                    <TruthRow label="I²C pins" value={`${formatNumber(meta.i2c_sda_pin)} / ${formatNumber(meta.i2c_scl_pin)}`} detail="SDA / SCL" />
+                    <TruthRow label="Packet rate" value={meta.packet_interval_s === null ? "Waiting for two packets" : `~${formatNumber(meta.packet_interval_s, 2, " s")}`} detail={`${meta.packets_received} packets for this zone`} />
+                    <TruthRow label="Last valid packet" value={formatNumber(zone.telemetry_age_s, 1, " s ago")} detail={zone.online ? "Within stale threshold" : "Node stale or offline"} tone={zone.online ? "stable" : "attention"} />
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {state.data_mode === "hardware" && (
+        <>
+          <EmergencyStopControl
+            controller={controller}
+            disabled={stale}
+            active={activeAction === "emergency-stop"}
+            error={activeAction === "emergency-stop" ? null : actionError}
+            onStop={() => void onEmergencyStop()}
+          />
+          <div className="demo-lab-boundary">
+            <div className="demo-lab-heading"><span><Icon name="alert" /></span><div><small>Separate workspace</small><h2>Demo / Simulation Lab</h2><p>Opening a scenario creates a simulated dashboard preview. Current hardware packets remain untouched.</p></div></div>
+            <SimulationControls
+              scenarios={scenarios}
+              activeScenarioId={null}
+              activeAction={activeAction}
+              actionError={actionError}
+              disabled={stale}
+              onActivate={onActivateScenario}
+              onReset={onResetScenario}
+            />
+          </div>
+        </>
       )}
 
       {state.data_mode === "simulation" && (

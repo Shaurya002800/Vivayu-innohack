@@ -2,9 +2,81 @@
 
 ## Current milestone
 
-Milestone 10 - Controller command/ACK protocol and fail-safe STOP (complete and
-frozen). Post-Milestone-10 farmer-first dashboard redesign is also complete; no
-Milestone 11 behavior was added.
+Milestone 10 - Controller command/ACK protocol and fail-safe STOP remains
+complete and frozen. The post-Milestone-10 real field-sensor telemetry software
+integration is implemented and automated checks pass, but it is **not physically
+accepted yet**. No Milestone 11 behavior was added.
+
+## Real field telemetry integration (software-ready; bench acceptance pending)
+
+- [x] The field-node sketch reads a capacitive soil probe on an ESP32 ADC1 pin,
+  applies a seven-sample median, publishes the real raw value, and calculates a
+  clamped 0-100 prototype moisture index only when distinct dry/wet calibration
+  references are explicitly compiled in
+- [x] Uncalibrated soil percentage is `null`; example calibration values are not
+  presented as measurements and the result is not described as VWC
+- [x] The field-node sketch reads BME280 temperature, humidity, and pressure,
+  tries I2C addresses `0x76` then `0x77`, preserves pressure in Pa on the wire,
+  and emits failed/missing channels as `null`
+- [x] BME280 failure does not suppress a valid soil channel, and soil failure
+  does not suppress valid BME280 channels
+- [x] Field nodes send a fixed, versioned internal ESP-NOW frame carrying their
+  explicit node and zone identity; the gateway never assigns a zone by arrival
+  order
+- [x] The gateway emits exactly one frozen `field_telemetry` JSON object plus
+  newline at 115200 baud and emits no production debug text on that serial link
+- [x] Direct USB smoke mode produces the same canonical JSON contract
+- [x] The existing M9 serial bridge remains the sole parser and state-ingestion
+  path; no parallel hardware store or duplicate telemetry parser was added
+- [x] Backend receive time still controls freshness; per-zone observed packet
+  interval/count and explicit wiring/calibration metadata are additive state
+  fields
+- [x] Hardware Zone A and Zone B remain isolated, retain last readings when
+  stale, and start with `null` measurements until real packets arrive
+- [x] Hardware-mode scenario load/reset now targets a separate simulation store;
+  the permanent demo context can be entered and exited without replacing current
+  hardware telemetry
+- [x] M4/M5/M6 previews for the isolated demo reuse the existing frozen pure
+  functions; no irrigation, water-quality, allocation, or M7 semantics changed
+- [x] Zones shows soil as the primary measurement plus temperature, humidity,
+  and pressure in farmer-facing hPa, with explicit `LIVE`, `NODE OFFLINE`, or
+  `SIMULATED DATA` provenance and last-reading language for stale packets
+- [x] System shows the zone/node/source/channel/age/status truth table and an
+  advanced hardware panel for real raw/calibrated soil, configured references,
+  pins/address, channel availability, packet interval/count, and freshness
+- [x] `scripts/watch_telemetry.py` observes canonical `/api/v1/state`; it does
+  not open serial or implement another packet parser
+- [x] Firmware configuration, per-probe calibration, direct USB/ESP-NOW smoke
+  testing, disconnect tests, and physical limitations are documented in
+  `firmware/README.md`
+- [ ] Physical ESP32/BME280/soil/gateway USB bench test has not been performed in
+  this environment; wiring, calibration, RF range, real ~1 Hz stability, and
+  dashboard behavior with actual devices are not yet claimed
+
+### Final field packet, pins, calibration, and cadence
+
+The gateway/direct-USB production stream remains the frozen 115200-baud,
+one-JSON-object-per-line contract:
+
+```json
+{"schema_version":"1.0","type":"field_telemetry","node_id":"field-node-a","zone_id":"A","timestamp_ms":123456,"soil_moisture_raw":2510,"soil_moisture_pct":24.3,"temperature_c":30.6,"humidity_pct":62.4,"pressure_pa":97481.0,"gas_resistance_ohm":null,"sraw":null,"battery_voltage_v":null,"battery_pct":null,"signal_rssi_dbm":null}
+```
+
+Unavailable channels are JSON `null`; `nan`, infinities, invented zeroes, debug
+text, and cross-zone substitutions are not emitted. Default ESP32 DevKit wiring
+is BME280 SDA GPIO 21, SCL GPIO 22, and capacitive soil ADC1 GPIO 34, all
+overridable per field-node build. BME280 discovery tries `0x76` then `0x77`.
+
+Each soil probe must be calibrated independently: record its filtered dry
+reference, record its fully wet reference, compile those values as
+`VIVAYU_SOIL_DRY_RAW`/`VIVAYU_SOIL_WET_RAW`, and mirror them in the matching
+backend `ZONE_*` metadata settings. Until the two references differ, the real
+raw ADC is sent but calibrated percentage remains `null`. The index is not VWC.
+
+The field loop uses `millis()` scheduling at 1000 ms, a seven-sample median for
+soil, and no long blocking delay. With the existing one-second frontend poll,
+the designed visible latency is approximately one to two seconds; physical
+cadence/latency is not yet measured.
 
 ## Working
 
@@ -97,6 +169,10 @@ Milestone 11 behavior was added.
 - `COMMAND_MAX_RUNTIME_S=120`
 - `COMMAND_HISTORY_LIMIT=100`
 - `ZONE_STALE_SECONDS=10`
+- `FIELD_TELEMETRY_INTERVAL_S=1`
+- `ZONE_A_SOIL_DRY_RAW`, `ZONE_A_SOIL_WET_RAW`, `ZONE_A_SOIL_ADC_PIN`
+- `ZONE_A_BME280_I2C_ADDRESS`, `ZONE_A_I2C_SDA_PIN`, `ZONE_A_I2C_SCL_PIN`
+- equivalent `ZONE_B_*` sensor settings
 
 The exact packet, command, ACK, duplicate, timeout, reconnect, controller-state,
 and firmware safety obligations are frozen in `docs/HARDWARE_CONTRACT.md`.
@@ -156,6 +232,35 @@ and firmware safety obligations are frozen in `docs/HARDWARE_CONTRACT.md`.
   focus states, touch targets, reduced-motion handling, and breakpoint composition
 - `docs/STATUS.md`: redesign scope and verification record
 
+## Files completed for real field telemetry integration
+
+- `.env.example`: field interval and per-zone physical sensor provenance
+- `firmware/common/field_telemetry_frame.h`: explicit fixed ESP-NOW payload
+- `firmware/common/telemetry_math.h`: soil-index mapping/clamp and Pa boundary
+- `firmware/field_node/field_node.ino`: median soil sampling, BME280 acquisition,
+  independent nullable channels, ESP-NOW, and direct USB smoke mode
+- `firmware/gateway_node/gateway_node.ino`: validated ESP-NOW receive queue and
+  frozen newline-delimited JSON output
+- `firmware/tests/test_telemetry_math.cpp`: host-side calibration/pressure tests
+- `firmware/README.md`: build configuration, calibration, smoke test, and limits
+- `backend/app/config.py`: environment-backed per-zone sensor metadata
+- `backend/app/schemas.py`: additive hardware telemetry provenance and isolated
+  dashboard snapshot schemas
+- `backend/app/state.py`: per-zone packet timing/count plus isolated hardware and
+  demo stores
+- `backend/app/services/dashboard_snapshot.py`: read-only reuse of frozen M4-M6
+  preview functions for an explicitly supplied state
+- `backend/app/api/simulation.py`: isolated demo list/load/reset/snapshot API
+- `backend/tests/test_hardware_telemetry_integration.py`: physical-channel,
+  malformed-value, timing/stale, and demo-isolation coverage
+- `backend/tests/test_state_api.py`: visibly simulated snapshot API coverage
+- `frontend/src/types/index.ts`, `frontend/src/lib/api.ts`, and
+  `frontend/src/hooks/use-dashboard-data.ts`: typed live/demo polling boundary
+- `frontend/src/components/dashboard/dashboard.tsx`, shell, Zones, and System
+  views plus `frontend/src/app/globals.css`: live/stale/simulated provenance,
+  BME280 presentation, hardware diagnostics, and permanent demo labelling
+- `scripts/watch_telemetry.py`: backend telemetry smoke watcher
+
 ## Safety boundary
 
 An ACK timeout does not prove a pump never started. The backend therefore marks
@@ -182,12 +287,21 @@ documented firmware obligation, not a fabricated software claim.
   during the dashboard redesign.
 - Historical trend charts remain intentionally unavailable because no canonical
   history endpoint exists; the UI states this instead of fabricating a chart.
+- Physical field hardware was unavailable in this environment. Firmware has not
+  been flashed, and ESP-NOW delivery, BME280 wiring/address, soil calibration,
+  USB serial device selection, and real packet cadence remain unverified.
+- `arduino-cli`/PlatformIO is not installed in this workspace, so the full ESP32
+  sketches were not compiled against board libraries here. Host-side pure C++
+  telemetry math compilation passed.
 
 ## Tests and verification
 
 - Focused Milestone 10 protocol/safety suite: `29 passed`
-- Complete backend regression suite: `274 passed`
+- Focused real telemetry/state API suite: `19 passed`
+- Complete backend regression suite: `286 passed`
 - Python compilation: passed (`.venv/bin/python -m compileall -q app tests`)
+- Firmware telemetry math host compile/run: passed
+  (`c++ -std=c++17 firmware/tests/test_telemetry_math.cpp ...`)
 - Frontend lint: passed (`npm run lint`)
 - Frontend production build and TypeScript check: passed (`npm run build`)
 - Patch whitespace/error validation: passed (`git diff --check`)
@@ -197,6 +311,11 @@ documented firmware obligation, not a fabricated software claim.
   Overview, Zone A/B selection, Water, Insights, System, all six scenario
   controls, research-only boundaries, pending-hardware/null labels, and technical
   disclosure
+- Real telemetry UI browser QA: passed with a hardware-mode backend and no serial
+  device: live hardware showed null/offline sensor truth, Zones showed BME280
+  channels as unavailable, the isolated freshwater-shortage scenario displayed
+  a permanent `DEMO MODE · SIMULATED DATA` banner, and return-to-live restored
+  the unchanged hardware state
 - Responsive browser QA: passed at 1440, 1024, 768, 430, and 390 pixels with no
   horizontal document overflow; desktop, tablet, and mobile navigation states
   were verified
@@ -227,10 +346,18 @@ and no water deduction remain covered by the complete suite.
 ## Next exact task
 
 1. Keep Milestone 10 and the farmer-first dashboard redesign frozen.
-2. When controller hardware is available, perform a contract smoke test for
+2. Install/select the ESP32 board toolchain and required Arduino libraries, then
+   compile both field-node variants and the gateway sketch.
+3. Flash one direct-USB field node first, record real dry/wet values for that
+   exact probe, configure the same metadata in the backend, and verify all
+   nullable channel/disconnect/stale behaviors with `scripts/watch_telemetry.py`.
+4. Flash distinct Zone A and Zone B nodes plus the ESP-NOW gateway and complete
+   the isolation/demo-return/dashboard physical acceptance checklist in
+   `firmware/README.md`. Only then freeze the real telemetry integration.
+5. When controller hardware is available, perform a contract smoke test for
    newline framing, duplicate-ID cache, local `max_runtime_s`, STOP priority, and
    IDLE recovery without changing M10 semantics.
-3. Begin Milestone 11 only when explicitly authorized: MIX -> VERIFY_TDS ->
+6. Begin Milestone 11 only when explicitly authorized: MIX -> VERIFY_TDS ->
    bounded fresh correction/retry -> approve/fault.
-4. Do not add irrigation execution, post-soil verification, freshwater
+7. Do not add irrigation execution, post-soil verification, freshwater
    deduction, or adaptive calibration until Milestone 12 is separately approved.

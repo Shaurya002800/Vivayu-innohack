@@ -61,6 +61,24 @@ def test_list_activate_and_reset_simulation_scenario() -> None:
     assert reset.json()["zones"]["A"]["telemetry"]["soil_moisture_pct"] == 32.0
 
 
+def test_demo_snapshot_is_canonical_and_visibly_simulated() -> None:
+    api_request(
+        "POST",
+        "/api/v1/simulation/load",
+        json={"scenario_id": "zone_a_critical"},
+    )
+
+    response = api_request("GET", "/api/v1/simulation/snapshot")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["state"]["data_mode"] == "simulation"
+    assert payload["state"]["active_scenario_id"] == "zone_a_critical"
+    assert set(payload["irrigation"]) == {"A", "B"}
+    assert set(payload["water_quality"]) == {"A", "B"}
+    assert set(payload["allocation"]["zones"]) == {"A", "B"}
+
+
 def test_unknown_scenario_returns_404() -> None:
     response = api_request(
         "POST",

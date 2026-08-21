@@ -13,6 +13,7 @@ from app.config import settings
 from app.schemas import (
     ControllerState,
     DataMode,
+    HardwareTelemetryMetadata,
     MixWaterState,
     PowerState,
     PrototypeIrrigationParameters,
@@ -196,6 +197,7 @@ class ApplicationStateStore:
                         "legacy Vivayu output is research-only and never controls irrigation",
                     ),
                 ),
+                hardware_metadata=self._hardware_metadata(zone_id),
             )
         return self._with_derived_contexts(SystemState(
             data_mode="hardware",
@@ -230,6 +232,21 @@ class ApplicationStateStore:
                 communication_fault="controller status has not been received",
             ),
         ))
+
+    @staticmethod
+    def _hardware_metadata(zone_id: ZoneId) -> HardwareTelemetryMetadata:
+        prefix = "zone_a" if zone_id == "A" else "zone_b"
+        address = getattr(settings, f"{prefix}_bme280_i2c_address")
+        return HardwareTelemetryMetadata(
+            source="HARDWARE",
+            target_interval_s=settings.field_telemetry_interval_s,
+            soil_dry_raw=getattr(settings, f"{prefix}_soil_dry_raw"),
+            soil_wet_raw=getattr(settings, f"{prefix}_soil_wet_raw"),
+            soil_adc_pin=getattr(settings, f"{prefix}_soil_adc_pin"),
+            bme280_i2c_address=address.lower() if address is not None else None,
+            i2c_sda_pin=getattr(settings, f"{prefix}_i2c_sda_pin"),
+            i2c_scl_pin=getattr(settings, f"{prefix}_i2c_scl_pin"),
+        )
 
     def _with_initial_vivayu_health(self, state: SystemState) -> SystemState:
         zones: dict[ZoneId, ZoneState] = {}
@@ -311,6 +328,10 @@ class ApplicationStateStore:
     def get_state(self) -> SystemState:
         with self._lock:
             return self._state_snapshot()
+
+    @property
+    def data_mode(self) -> DataMode:
+        return self._data_mode
 
     def _state_snapshot(self) -> SystemState:
         """Refresh receive-time freshness and measurement ages without data loss."""
@@ -421,6 +442,7 @@ class ApplicationStateStore:
                 telemetry_age_s=current_zone.telemetry_age_s,
                 online=current_zone.online,
                 vivayu_health=health,
+                hardware_metadata=current_zone.hardware_metadata,
             )
             self._replace_zone(canonical_zone_id, updated_zone)
             return updated_zone.model_copy(deep=True)
@@ -552,6 +574,23 @@ class ApplicationStateStore:
                 current.config.vivayu_sensors,
                 data_mode=self._state.data_mode,
             )
+            previous_received_at = current.telemetry.received_at
+            packet_interval_s = current.hardware_metadata.packet_interval_s
+            if telemetry.received_at is not None and previous_received_at is not None:
+                observed_interval = (
+                    telemetry.received_at - previous_received_at
+                ).total_seconds()
+                if observed_interval > 0:
+                    packet_interval_s = observed_interval
+            hardware_metadata = current.hardware_metadata.model_copy(
+                update={
+                    "packets_received": (
+                        current.hardware_metadata.packets_received + 1
+                    ),
+                    "packet_interval_s": packet_interval_s,
+                },
+                deep=True,
+            )
             updated_zone = ZoneState(
                 zone_id=canonical_zone_id,
                 config=current.config,
@@ -562,6 +601,7 @@ class ApplicationStateStore:
                 telemetry_age_s=0.0,
                 online=True,
                 vivayu_health=health,
+                hardware_metadata=hardware_metadata,
             )
             self._replace_zone(canonical_zone_id, updated_zone)
             return updated_zone.model_copy(deep=True)
@@ -681,3 +721,13 @@ class ApplicationStateStore:
 
 
 application_state = ApplicationStateStore(data_mode=settings.data_mode)
+isolated_demo_state = ApplicationStateStore(data_mode="simulation")
+
+
+def simulation_state_store(
+    live_store: ApplicationStateStore = application_state,
+    demo_store: ApplicationStateStore = isolated_demo_state,
+) -> ApplicationStateStore:
+    """Keep legacy simulation behavior while isolating demos in hardware mode."""
+
+    return live_store if live_store.data_mode == "simulation" else demo_store

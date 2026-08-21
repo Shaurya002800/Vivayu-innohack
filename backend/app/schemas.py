@@ -62,6 +62,7 @@ WeatherProviderStatus = Literal[
 RiskLevel = Literal["low", "watch", "elevated", "high"]
 VivayuHealthStatus = Literal["UNAVAILABLE", "COLLECTING", "READY", "ERROR"]
 VivayuSourceMode = Literal["SIMULATION", "HARDWARE"]
+TelemetrySource = Literal["SIMULATION", "HARDWARE"]
 VivayuEnvironmentSensor = Literal["BME680", "BME280", "UNKNOWN"]
 VivayuVocSensor = Literal["SGP40_COMPATIBLE", "AGS10", "UNKNOWN"]
 VivayuHealthReasonCode = Literal[
@@ -575,6 +576,35 @@ class VivayuHealthState(CanonicalModel):
         return self
 
 
+class HardwareTelemetryMetadata(CanonicalModel):
+    """Backend-observed packet timing plus explicitly configured sensor wiring."""
+
+    source: TelemetrySource = "SIMULATION"
+    packets_received: NonNegativeInt = 0
+    packet_interval_s: PositiveFloat | None = None
+    target_interval_s: PositiveFloat | None = None
+    soil_dry_raw: NonNegativeInt | None = None
+    soil_wet_raw: NonNegativeInt | None = None
+    soil_adc_pin: NonNegativeInt | None = None
+    bme280_i2c_address: Annotated[
+        str, Field(pattern=r"^0x(?:76|77)$")
+    ] | None = None
+    i2c_sda_pin: NonNegativeInt | None = None
+    i2c_scl_pin: NonNegativeInt | None = None
+
+    @model_validator(mode="after")
+    def validate_calibration_pair(self) -> Self:
+        if (self.soil_dry_raw is None) != (self.soil_wet_raw is None):
+            raise ValueError("soil dry/wet calibration references must be configured together")
+        if (
+            self.soil_dry_raw is not None
+            and self.soil_wet_raw is not None
+            and self.soil_dry_raw == self.soil_wet_raw
+        ):
+            raise ValueError("soil dry/wet calibration references must differ")
+        return self
+
+
 class ZoneState(CanonicalModel):
     zone_id: ZoneId
     config: ZoneConfig
@@ -585,6 +615,9 @@ class ZoneState(CanonicalModel):
     telemetry_age_s: NonNegativeFloat | None = None
     online: bool = False
     vivayu_health: VivayuHealthState
+    hardware_metadata: HardwareTelemetryMetadata = Field(
+        default_factory=HardwareTelemetryMetadata
+    )
 
     @model_validator(mode="after")
     def validate_zone_identity(self) -> Self:
@@ -1220,6 +1253,11 @@ class SystemState(CanonicalModel):
         for zone_id, zone in self.zones.items():
             if zone.zone_id != zone_id:
                 raise ValueError(f"zone map key {zone_id} does not match nested zone_id")
+            expected_source = "HARDWARE" if self.data_mode == "hardware" else "SIMULATION"
+            if zone.hardware_metadata.source != expected_source:
+                raise ValueError(
+                    f"zone {zone_id} telemetry source does not match data mode"
+                )
         if self.data_mode == "hardware" and self.active_scenario_id is not None:
             raise ValueError("hardware state cannot have an active simulation scenario")
         if self.data_mode == "simulation" and self.controller.status != "SIMULATED":
@@ -1237,6 +1275,23 @@ class SimulationScenarioSummary(CanonicalModel):
 
 class ActivateSimulationRequest(CanonicalModel):
     scenario_id: str
+
+
+class DashboardSnapshot(CanonicalModel):
+    """Complete read-only dashboard projection for an isolated state context."""
+
+    state: SystemState
+    irrigation: dict[ZoneId, IrrigationNeedResult]
+    water_quality: dict[ZoneId, WaterQualityResult]
+    allocation: FreshwaterAllocationResult
+
+    @model_validator(mode="after")
+    def validate_zone_sets(self) -> Self:
+        if set(self.irrigation) != {"A", "B"}:
+            raise ValueError("dashboard irrigation projection requires Zone A and Zone B")
+        if set(self.water_quality) != {"A", "B"}:
+            raise ValueError("dashboard water-quality projection requires Zone A and Zone B")
+        return self
 
 
 class StageOverrideRequest(CanonicalModel):

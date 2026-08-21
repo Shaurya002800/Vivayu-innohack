@@ -41,6 +41,12 @@ export function ZoneView({ snapshot, selectedZone, onSelectZone }: ZoneViewProps
   const moisture = zone.telemetry.soil_moisture_pct;
   const moistureValue = moisture === null ? 0 : Math.min(100, Math.max(0, moisture));
   const tone = irrigationTone(irrigation);
+  const isHardware = snapshot.state.data_mode === "hardware";
+  const sourceLabel = isHardware
+    ? zone.online
+      ? `LIVE · ${zone.telemetry.node_id ?? `Field Node ${selectedZone}`}`
+      : `NODE OFFLINE · last packet ${formatNumber(zone.telemetry_age_s, 1, " s ago")}`
+    : "SIMULATED DATA";
 
   return (
     <div className="zone-view">
@@ -55,18 +61,24 @@ export function ZoneView({ snapshot, selectedZone, onSelectZone }: ZoneViewProps
 
       <ZoneSelector snapshot={snapshot} selectedZone={selectedZone} onSelect={onSelectZone} />
 
+      <div className={`sensor-source-banner ${isHardware ? zone.online ? "live" : "stale" : "simulated"}`}>
+        <span className="source-pulse" />
+        <strong>{sourceLabel}</strong>
+        <span>{isHardware ? "Physical field telemetry" : "Demo scenario telemetry"}</span>
+      </div>
+
       <section className="zone-focus-grid">
         <article className={`moisture-card tone-${tone}`}>
           <div className="panel-heading">
             <span><Icon name="drop" /> Soil moisture</span>
-            <small>{zone.online ? "Reading available" : "Sensor offline"}</small>
+            <small>{zone.online ? isHardware ? "Live hardware" : "Simulated" : "Last known reading"}</small>
           </div>
           <div
             className="moisture-gauge"
             style={{ "--moisture": `${moistureValue * 3.6}deg` } as CSSProperties}
             aria-label={`Soil moisture ${formatPercent(moisture, 1)}`}
           >
-            <div><strong>{formatPercent(moisture, 1)}</strong><span>Current</span></div>
+            <div><strong>{formatPercent(moisture, 1)}</strong><span>{zone.online ? "Current" : "Last reading"}</span></div>
           </div>
           <div className="moisture-thresholds">
             <span><i className="critical" /> Critical {formatPercent(irrigation.critical_moisture_pct, 1)}</span>
@@ -120,12 +132,14 @@ export function ZoneView({ snapshot, selectedZone, onSelectZone }: ZoneViewProps
           <Reading label="Stage source" value={titleCaseCode(zone.crop_context?.stage_source)} />
         </article>
 
-        <article className="support-card">
-          <div className="panel-heading"><span><Icon name="weather" /> Field environment</span></div>
-          <Reading label="Temperature" value={formatNumber(zone.telemetry.temperature_c, 1, " °C")} />
-          <Reading label="Humidity" value={formatPercent(zone.telemetry.humidity_pct, 1)} />
-          <Reading label="Rain chance, 6h" value={formatPercent(snapshot.state.weather.rain_probability_6h_pct)} />
-          <Reading label="ET₀, 6h" value={formatNumber(snapshot.state.weather.et0_6h_mm, 2, " mm")} />
+        <article className="support-card environment-card">
+          <div className="panel-heading"><span><Icon name="weather" /> Field environment</span><small>{zone.online ? "Current packet" : "Last packet"}</small></div>
+          <div className="environment-readings">
+            <div><Icon name="thermometer" /><small>Temperature</small><strong>{formatNumber(zone.telemetry.temperature_c, 1, " °C")}</strong></div>
+            <div><Icon name="humidity" /><small>Humidity</small><strong>{formatPercent(zone.telemetry.humidity_pct, 1)}</strong></div>
+            <div><Icon name="weather" /><small>Pressure</small><strong>{formatNumber(zone.telemetry.pressure_pa === null ? null : zone.telemetry.pressure_pa / 100, 1, " hPa")}</strong></div>
+          </div>
+          <p className="environment-weather-note">Forecast: {formatPercent(snapshot.state.weather.rain_probability_6h_pct)} rain · ET₀ {formatNumber(snapshot.state.weather.et0_6h_mm, 2, " mm")}</p>
         </article>
 
         <article className="support-card health-card-simple">
@@ -149,6 +163,7 @@ export function ZoneView({ snapshot, selectedZone, onSelectZone }: ZoneViewProps
           <Reading label="Battery" value={formatPercent(zone.telemetry.battery_pct, 1)} />
           <Reading label="Signal" value={formatNumber(zone.telemetry.signal_rssi_dbm, 0, " dBm")} />
           <Reading label="Telemetry age" value={formatNumber(zone.telemetry_age_s, 1, " s")} />
+          <Reading label="Packet interval" value={formatNumber(zone.hardware_metadata.packet_interval_s, 2, " s")} />
           <Reading label="Allocation status" value={titleCaseCode(allocation.status)} />
         </div>
       </details>

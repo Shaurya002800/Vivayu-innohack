@@ -1,4 +1,5 @@
 export type DataMode = "simulation" | "hardware";
+export type DashboardContext = "live" | "demo";
 export type ZoneId = "A" | "B";
 export type WeatherStatus = "SIMULATED" | "LIVE" | "CACHED" | "OFFLINE";
 export type IrrigationStatus =
@@ -133,6 +134,18 @@ export interface ZoneState {
   telemetry_age_s: number | null;
   online: boolean;
   vivayu_health: VivayuHealthState;
+  hardware_metadata: {
+    source: "SIMULATION" | "HARDWARE";
+    packets_received: number;
+    packet_interval_s: number | null;
+    target_interval_s: number | null;
+    soil_dry_raw: number | null;
+    soil_wet_raw: number | null;
+    soil_adc_pin: number | null;
+    bme280_i2c_address: "0x76" | "0x77" | null;
+    i2c_sda_pin: number | null;
+    i2c_scl_pin: number | null;
+  };
 }
 
 export interface WaterSourceState {
